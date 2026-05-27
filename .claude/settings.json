@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(23884, 62592, 64340, 70980, 68756, 31168, 71088 | ForEach-Object { taskkill /PID $_ /F 2>$null })"
+    ]
+  }
+}

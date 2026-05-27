@@ -1,0 +1,51 @@
+# Dify Workflow: 法规文件实体提取-Text (Text Input Variant)
+#
+# This is a variant of "高价超募-政策法规实体提取-DOCX" that accepts raw text
+# input instead of a file upload. All downstream nodes (chunking, LLM extraction,
+# triple construction, dedup) are identical to the DOCX version.
+#
+# === SETUP IN DIFY PLATFORM ===
+# 1. In Dify, clone the "高价超募-政策法规实体提取-DOCX" workflow
+# 2. Rename to "法规文件实体提取-Text"
+# 3. Edit the Start node:
+#    - Remove the 'policy_file' file variable
+#    - Add a 'text' variable of type string (no file type restrictions)
+# 4. Delete the "文档提取器" (Document Extractor) node
+# 5. Reconnect: Start → 文本分块 (code node 17585314932320)
+# 6. Save and publish
+# 7. Copy the workflow ID from the URL and set DIFY_REGULATION_WORKFLOW_ID in .env
+# 8. Create an API key in Dify and set DIFY_API_KEY in .env
+#
+# === API CALL FORMAT ===
+# POST /v1/workflows/run
+# {
+#   "inputs": {"text": "<regulation text>"},
+#   "response_mode": "blocking",
+#   "user": "windeye-pipeline"
+# }
+#
+# === EXPECTED RESPONSE ===
+# {
+#   "data": {
+#     "outputs": {
+#       "output_triples": "<JSONL string of nodes and relationships>"
+#     }
+#   }
+# }
+
+app:
+  description: 对资本市场政策法规的文本内容进行实体抽取与关系抽取（文本输入版）
+  icon: "\U0001F916"
+  icon_background: '#E0F2FE'
+  icon_type: emoji
+  mode: workflow
+  name: 法规文件实体提取-Text
+  use_icon_as_answer_icon: false
+
+kind: app
+version: 0.6.0
+
+# NOTE: This YAML is a reference template. The full workflow definition
+# (nodes, edges, prompts) is identical to 高价超募-政策法规实体提取-DOCX.yml
+# except for the changes documented above. Import that file into Dify and
+# apply the modifications listed at the top of this file.

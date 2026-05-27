@@ -1,0 +1,24 @@
+{
+  "dataset_name": "FinancialRegulatoryKG",
+  "graph_dialect": "Neo4j_Cypher",
+  "global_node_label": "",
+  "directed_query_mode": false,
+  "valid_relations": [],
+  "lexical_patterns": {
+    "string_quote_escape": true
+  },
+  "entity_matching_strategy": {
+    "mode": "exact_property",
+    "property_key": "name"
+  },
+  "layer_labels": {
+    "Subject":   ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY"],
+    "Event":     ["Event", "COMPANY", "PERSON", "TIME", "EVENT", "REGULATOR"],
+    "Feature":   ["Feature", "Riskfeature", "Riskfactor"],
+    "Regulation":["Regulation", "Law", "Action"],
+    "Closure":   ["RiskReport", "WorkflowTicket", "AuditLog"]
+  },
+  "search_properties": ["name", "COMPANY_NM", "PERSON_NM", "title", "factor_nm", "feature_nm", "report_id", "ticket_id"],
+  "return_target_types": ["Node"],
+  "_note": "valid_relations is empty intentionally — the Probe agent dynamically discovers relations from the live KG schema at query time."
+}
