@@ -9,6 +9,7 @@ from datetime import datetime
 
 import numpy as np
 from fastapi import APIRouter, Query
+from pydantic import BaseModel, Field
 from scipy.sparse import lil_matrix
 
 from core.database import Neo4jClient
@@ -90,6 +91,15 @@ def _process_result(records: list[dict]) -> dict:
                         edge_ids.add(rid)
 
     return {"nodes": list(nodes.values()), "edges": edges}
+
+
+class SeedCommunityRequest(BaseModel):
+    seed_names: list[str] = Field(default_factory=list, alias="seedNames")
+    seed_ids: list[str] = Field(default_factory=list, alias="seedIds")
+    max_hop: int = Field(default=2, ge=1, le=3, alias="maxHop")
+    method: str = Field(default="louvain", description="louvain | greedy | wcc")
+    min_community_size: int = Field(default=2, ge=1, le=100, alias="minCommunitySize")
+    path_limit: int = Field(default=2000, ge=50, le=10000, alias="pathLimit")
 
 
 # ====================================================
@@ -853,6 +863,26 @@ def get_community_subgraph(
         community_id=community_id,
         layer=layer if layer != "all" else None,
         limit=limit,
+    )
+
+
+@router.post("/communities/seed-subgraph")
+def discover_seed_subgraph_communities(req: SeedCommunityRequest):
+    """Discover local communities from specified risk subjects.
+
+    Online version of the illustrated workflow:
+    risk subjects -> N-hop network -> connected subgraph -> communities.
+    """
+    from kg_query.analytics.graph_analytics import GraphAnalytics
+
+    analytics = GraphAnalytics(db_client=_client())
+    return analytics.discover_seeded_communities(
+        seed_names=req.seed_names,
+        seed_ids=req.seed_ids,
+        max_hop=req.max_hop,
+        method=req.method,
+        min_community_size=req.min_community_size,
+        path_limit=req.path_limit,
     )
 
 

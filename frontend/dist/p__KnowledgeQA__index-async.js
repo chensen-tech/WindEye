@@ -21,7 +21,7 @@ __mako_require__.e(exports, {
 });
 var _export_star = __mako_require__("@swc/helpers/_/_export_star");
 var _interop_require_default = __mako_require__("@swc/helpers/_/_interop_require_default");
-var _g6pc = /*#__PURE__*/ _interop_require_default._(_export_star._(__mako_require__("node_modules/@antv/g6-pc/es/index.js"), exports));
+var _g6pc = _interop_require_default._(_export_star._(__mako_require__("node_modules/@antv/g6-pc/es/index.js"), exports));
 _g6pc.default.version = '4.8.23';
 var _default = _g6pc.default;
 var version = '4.8.23';
@@ -50,12 +50,15 @@ __mako_require__.e(exports, {
     },
     sendRiskStream: function() {
         return sendRiskStream;
+    },
+    sendUnifiedStream: function() {
+        return sendUnifiedStream;
     }
 });
 var _interop_require_default = __mako_require__("@swc/helpers/_/_interop_require_default");
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
-var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
-var _axios = _interop_require_default._(__mako_require__("node_modules/axios/index.js"));
+var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _axios = /*#__PURE__*/ _interop_require_default._(__mako_require__("node_modules/axios/index.js"));
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -94,6 +97,7 @@ const sendChatStream = (req, callbacks)=>{
             try {
                 const data = JSON.parse(e.data);
                 if (callbacks.onStage) {
+                    // New structured format with machine-readable stage_id
                     if (data.stage_id) callbacks.onStage({
                         stage_id: data.stage_id,
                         stage_name: data.stage_name || '',
@@ -106,7 +110,8 @@ const sendChatStream = (req, callbacks)=>{
                         status: data.progress !== undefined && data.progress >= 1.0 ? 'done' : 'running',
                         trace: data.trace
                     });
-                    else if (data.content) callbacks.onStage(data.content);
+                    else if (data.content) // Backward-compat: old string-format stages
+                    callbacks.onStage(data.content);
                 }
             } catch (err) {
                 console.error('[SSE] stage parse error:', err);
@@ -134,6 +139,83 @@ const sendChatStream = (req, callbacks)=>{
             } catch (err) {
                 console.error('[SSE] review parse error:', err);
                 callbacks.onError('Failed to parse review event');
+            }
+        });
+        es.addEventListener('entity_stats', (e)=>{
+            try {
+                var _stats_top_entities, _callbacks_onEntityStats;
+                const stats = JSON.parse(e.data);
+                console.groupCollapsed(`%c[SSE-Graph] 实体统计 %c${stats.total_entities}个实体 %c${Object.keys(stats.entity_type_counts).length}种类型`, 'color:#2855D1;font-weight:bold', 'color:#1890ff', 'color:#8c8c8c');
+                console.log('类型分布:', stats.entity_type_counts);
+                console.table((_stats_top_entities = stats.top_entities) === null || _stats_top_entities === void 0 ? void 0 : _stats_top_entities.map((e)=>({
+                        名称: e.name,
+                        类型: e.type,
+                        ID: e.id
+                    })));
+                console.groupEnd();
+                (_callbacks_onEntityStats = callbacks.onEntityStats) === null || _callbacks_onEntityStats === void 0 || _callbacks_onEntityStats.call(callbacks, stats);
+            } catch (err) {
+                console.error('[SSE] entity_stats parse error:', err);
+            }
+        });
+        es.addEventListener('community', (e)=>{
+            try {
+                var _info_communities, _info_communities1, _callbacks_onCommunity;
+                const info = JSON.parse(e.data);
+                console.groupCollapsed(`%c[SSE-Graph] 群体发现 %c${((_info_communities = info.communities) === null || _info_communities === void 0 ? void 0 : _info_communities.length) || 0}个群体 %c算法:${info.algorithm}`, 'color:#722ed1;font-weight:bold', 'color:#a855f7', 'color:#8c8c8c');
+                if (((_info_communities1 = info.communities) === null || _info_communities1 === void 0 ? void 0 : _info_communities1.length) > 0) console.table(info.communities.map((c)=>{
+                    var _c_members;
+                    return {
+                        '群体ID': c.community_id,
+                        '成员数': c.size,
+                        '成员(前5)': ((_c_members = c.members) === null || _c_members === void 0 ? void 0 : _c_members.slice(0, 5).map((m)=>m.name).join(', ')) ?? ''
+                    };
+                }));
+                console.groupEnd();
+                (_callbacks_onCommunity = callbacks.onCommunity) === null || _callbacks_onCommunity === void 0 || _callbacks_onCommunity.call(callbacks, info);
+            } catch (err) {
+                console.error('[SSE] community parse error:', err);
+            }
+        });
+        es.addEventListener('entity_community_map', (e)=>{
+            try {
+                var _map_entities, _map_entities1, _callbacks_onEntityCommunityMap;
+                const map = JSON.parse(e.data);
+                console.groupCollapsed(`%c[SSE-Graph] 实体→群体映射 %c${((_map_entities = map.entities) === null || _map_entities === void 0 ? void 0 : _map_entities.length) || 0}个实体 %c${map.unmapped_count || 0}个未归属`, 'color:#eb2f96;font-weight:bold', 'color:#f759ab', 'color:#8c8c8c');
+                if (((_map_entities1 = map.entities) === null || _map_entities1 === void 0 ? void 0 : _map_entities1.length) > 0) {
+                    console.table(map.entities.map((e)=>{
+                        var _e_communities, _e_communities1;
+                        return {
+                            '实体名称': e.name,
+                            '类型': e.type,
+                            '所属群体数': ((_e_communities = e.communities) === null || _e_communities === void 0 ? void 0 : _e_communities.length) || 0,
+                            '群体(角色)': ((_e_communities1 = e.communities) === null || _e_communities1 === void 0 ? void 0 : _e_communities1.map((c)=>`#${c.community_id}(${c.role},${c.size}成员)`).join(' | ')) || '无'
+                        };
+                    }));
+                    const bridges = map.entities.filter((e)=>{
+                        var _e_communities;
+                        return ((_e_communities = e.communities) === null || _e_communities === void 0 ? void 0 : _e_communities.length) >= 2;
+                    });
+                    if (bridges.length > 0) console.log('%c桥接实体 (≥2个群体):', 'color:#fa8c16;font-weight:bold', bridges.map((e)=>e.name));
+                    const unmapped = map.entities.filter((e)=>{
+                        var _e_communities;
+                        return ((_e_communities = e.communities) === null || _e_communities === void 0 ? void 0 : _e_communities.length) === 0;
+                    });
+                    if (unmapped.length > 0) console.log('%c未归属实体:', 'color:#8c8c8c', unmapped.map((e)=>e.name));
+                }
+                console.groupEnd();
+                (_callbacks_onEntityCommunityMap = callbacks.onEntityCommunityMap) === null || _callbacks_onEntityCommunityMap === void 0 || _callbacks_onEntityCommunityMap.call(callbacks, map);
+            } catch (err) {
+                console.error('[SSE] entity_community_map parse error:', err);
+            }
+        });
+        es.addEventListener('reasoning', (e)=>{
+            try {
+                var _callbacks_onReasoning;
+                const data = JSON.parse(e.data);
+                (_callbacks_onReasoning = callbacks.onReasoning) === null || _callbacks_onReasoning === void 0 || _callbacks_onReasoning.call(callbacks, data);
+            } catch (err) {
+                console.error('[SSE] reasoning parse error:', err);
             }
         });
         es.addEventListener('done', ()=>{
@@ -175,13 +257,15 @@ const sendChatStream = (req, callbacks)=>{
     };
 };
 const sendRiskStream = (req, callbacks)=>{
-    const params = new URLSearchParams({
+    const body = JSON.stringify({
         query: req.query,
         sessionId: req.sessionId,
-        roundId: String(req.roundId)
+        roundId: req.roundId,
+        communityId: req.communityId ?? null,
+        maxHop: req.maxHop ?? 3,
+        focusEntities: req.focusEntities ?? [],
+        fileContent: req.fileContent ?? null
     });
-    if (req.communityId !== undefined) params.set('communityId', String(req.communityId));
-    if (req.maxHop !== undefined) params.set('maxHop', String(req.maxHop));
     let retryCount = 0;
     const maxRetries = 3;
     let aborted = false;
@@ -192,7 +276,12 @@ const sendRiskStream = (req, callbacks)=>{
         abortController = new AbortController();
         try {
             var _resp_body;
-            const resp = await fetch(`/api/v1/chat/risk-stream?${params.toString()}`, {
+            const resp = await fetch('/api/v1/chat/risk-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body,
                 signal: abortController.signal
             });
             if (!resp.ok) throw new Error(`Risk stream failed: ${resp.status}`);
@@ -224,11 +313,64 @@ const sendRiskStream = (req, callbacks)=>{
                                 const { stage, content } = JSON.parse(raw);
                                 (_callbacks_onStage = callbacks.onStage) === null || _callbacks_onStage === void 0 || _callbacks_onStage.call(callbacks, stage, content);
                             } else if (ev === 'entity_stats') {
-                                var _callbacks_onEntityStats;
-                                (_callbacks_onEntityStats = callbacks.onEntityStats) === null || _callbacks_onEntityStats === void 0 || _callbacks_onEntityStats.call(callbacks, JSON.parse(raw));
+                                var _stats_top_entities, _callbacks_onEntityStats;
+                                const stats = JSON.parse(raw);
+                                console.groupCollapsed(`%c[RiskSSE] 实体统计 %c${stats.total_entities}个实体 %c${Object.keys(stats.entity_type_counts).length}种类型`, 'color:#2855D1;font-weight:bold', 'color:#1890ff', 'color:#8c8c8c');
+                                console.log('类型分布:', stats.entity_type_counts);
+                                console.table((_stats_top_entities = stats.top_entities) === null || _stats_top_entities === void 0 ? void 0 : _stats_top_entities.map((e)=>({
+                                        名称: e.name,
+                                        类型: e.type,
+                                        ID: e.id
+                                    })));
+                                console.groupEnd();
+                                (_callbacks_onEntityStats = callbacks.onEntityStats) === null || _callbacks_onEntityStats === void 0 || _callbacks_onEntityStats.call(callbacks, stats);
                             } else if (ev === 'community') {
-                                var _callbacks_onCommunity;
-                                (_callbacks_onCommunity = callbacks.onCommunity) === null || _callbacks_onCommunity === void 0 || _callbacks_onCommunity.call(callbacks, JSON.parse(raw));
+                                var _info_communities, _info_communities1, _callbacks_onCommunity;
+                                const info = JSON.parse(raw);
+                                console.groupCollapsed(`%c[RiskSSE] 群体发现 %c${((_info_communities = info.communities) === null || _info_communities === void 0 ? void 0 : _info_communities.length) || 0}个群体 %c算法:${info.algorithm}`, 'color:#722ed1;font-weight:bold', 'color:#a855f7', 'color:#8c8c8c');
+                                if (((_info_communities1 = info.communities) === null || _info_communities1 === void 0 ? void 0 : _info_communities1.length) > 0) {
+                                    var _info_communities__members, _info_communities_;
+                                    console.table(info.communities.map((c)=>{
+                                        var _c_modularity, _c_members;
+                                        return {
+                                            '群体ID': c.community_id,
+                                            '成员数': c.size,
+                                            '模块度': ((_c_modularity = c.modularity) === null || _c_modularity === void 0 ? void 0 : _c_modularity.toFixed(4)) ?? '-',
+                                            '成员(前5)': ((_c_members = c.members) === null || _c_members === void 0 ? void 0 : _c_members.slice(0, 5).map((m)=>m.name).join(', ')) ?? ''
+                                        };
+                                    }));
+                                    if (((_info_communities_ = info.communities[0]) === null || _info_communities_ === void 0 ? void 0 : (_info_communities__members = _info_communities_.members) === null || _info_communities__members === void 0 ? void 0 : _info_communities__members.length) > 0) console.log(`群体#0 全部成员 (${info.communities[0].members.length}):`, info.communities[0].members.map((m)=>`${m.name}(${m.type})`));
+                                }
+                                console.groupEnd();
+                                (_callbacks_onCommunity = callbacks.onCommunity) === null || _callbacks_onCommunity === void 0 || _callbacks_onCommunity.call(callbacks, info);
+                            } else if (ev === 'entity_community_map') {
+                                var _map_entities, _map_entities1, _callbacks_onEntityCommunityMap;
+                                const map = JSON.parse(raw);
+                                console.groupCollapsed(`%c[RiskSSE] 实体→群体映射 %c${((_map_entities = map.entities) === null || _map_entities === void 0 ? void 0 : _map_entities.length) || 0}个实体 %c${map.unmapped_count || 0}个未归属`, 'color:#eb2f96;font-weight:bold', 'color:#f759ab', 'color:#8c8c8c');
+                                if (((_map_entities1 = map.entities) === null || _map_entities1 === void 0 ? void 0 : _map_entities1.length) > 0) {
+                                    const rows = map.entities.map((e)=>{
+                                        var _e_communities, _e_communities1;
+                                        return {
+                                            '实体名称': e.name,
+                                            '类型': e.type,
+                                            '所属群体数': ((_e_communities = e.communities) === null || _e_communities === void 0 ? void 0 : _e_communities.length) || 0,
+                                            '群体(角色)': ((_e_communities1 = e.communities) === null || _e_communities1 === void 0 ? void 0 : _e_communities1.map((c)=>`#${c.community_id}(${c.role},${c.size}成员)`).join(' | ')) || '无'
+                                        };
+                                    });
+                                    console.table(rows);
+                                    const bridges = map.entities.filter((e)=>{
+                                        var _e_communities;
+                                        return ((_e_communities = e.communities) === null || _e_communities === void 0 ? void 0 : _e_communities.length) >= 2;
+                                    });
+                                    if (bridges.length > 0) console.log('%c桥接实体 (≥2个群体):', 'color:#fa8c16;font-weight:bold', bridges.map((e)=>e.name));
+                                    const unmapped = map.entities.filter((e)=>{
+                                        var _e_communities;
+                                        return ((_e_communities = e.communities) === null || _e_communities === void 0 ? void 0 : _e_communities.length) === 0;
+                                    });
+                                    if (unmapped.length > 0) console.log('%c未归属实体:', 'color:#8c8c8c', unmapped.map((e)=>e.name));
+                                }
+                                console.groupEnd();
+                                (_callbacks_onEntityCommunityMap = callbacks.onEntityCommunityMap) === null || _callbacks_onEntityCommunityMap === void 0 || _callbacks_onEntityCommunityMap.call(callbacks, map);
                             } else if (ev === 'risk_paths') {
                                 var _callbacks_onRiskPaths;
                                 (_callbacks_onRiskPaths = callbacks.onRiskPaths) === null || _callbacks_onRiskPaths === void 0 || _callbacks_onRiskPaths.call(callbacks, JSON.parse(raw));
@@ -273,6 +415,159 @@ const sendRiskStream = (req, callbacks)=>{
         abortController === null || abortController === void 0 || abortController.abort();
     };
 };
+const sendUnifiedStream = (req, callbacks)=>{
+    const body = JSON.stringify({
+        query: req.query,
+        fileContent: req.fileContent ?? null,
+        sessionId: req.sessionId,
+        roundId: req.roundId,
+        maxHop: req.maxHop ?? 3,
+        intentHint: req.intentHint ?? null
+    });
+    let retryCount = 0;
+    const maxRetries = 3;
+    let aborted = false;
+    let doneFired = false;
+    let abortController = null;
+    const connect = async ()=>{
+        if (aborted) return;
+        abortController = new AbortController();
+        try {
+            var _resp_body;
+            const resp = await fetch('/api/v1/chat/unified-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body,
+                signal: abortController.signal
+            });
+            if (!resp.ok) throw new Error(`Unified stream failed: ${resp.status}`);
+            const reader = (_resp_body = resp.body) === null || _resp_body === void 0 ? void 0 : _resp_body.getReader();
+            if (!reader) throw new Error('No reader available');
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let pendingEvent = null;
+            while(true){
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, {
+                    stream: true
+                });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() ?? '';
+                for (const line of lines){
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+                    if (trimmed.startsWith('event:')) pendingEvent = trimmed.slice(6).trim();
+                    else if (trimmed.startsWith('data:')) {
+                        const raw = trimmed.slice(5).trim();
+                        const ev = pendingEvent;
+                        pendingEvent = null;
+                        if (!ev || !raw) continue;
+                        try {
+                            const data = JSON.parse(raw);
+                            switch(ev){
+                                case 'stage':
+                                    var _callbacks_onStage;
+                                    (_callbacks_onStage = callbacks.onStage) === null || _callbacks_onStage === void 0 || _callbacks_onStage.call(callbacks, data.stage || data.stage_name || '', data);
+                                    break;
+                                case 'entities':
+                                    var _callbacks_onEntities;
+                                    (_callbacks_onEntities = callbacks.onEntities) === null || _callbacks_onEntities === void 0 || _callbacks_onEntities.call(callbacks, data.data || data);
+                                    break;
+                                case 'subgraph':
+                                    var _callbacks_onSubgraph;
+                                    (_callbacks_onSubgraph = callbacks.onSubgraph) === null || _callbacks_onSubgraph === void 0 || _callbacks_onSubgraph.call(callbacks, data.data || data);
+                                    break;
+                                case 'entity_stats':
+                                    var _callbacks_onEntityStats;
+                                    (_callbacks_onEntityStats = callbacks.onEntityStats) === null || _callbacks_onEntityStats === void 0 || _callbacks_onEntityStats.call(callbacks, data.data || data);
+                                    break;
+                                case 'community':
+                                    var _callbacks_onCommunity;
+                                    (_callbacks_onCommunity = callbacks.onCommunity) === null || _callbacks_onCommunity === void 0 || _callbacks_onCommunity.call(callbacks, data.data || data);
+                                    break;
+                                case 'entity_community_map':
+                                    var _callbacks_onEntityCommunityMap;
+                                    (_callbacks_onEntityCommunityMap = callbacks.onEntityCommunityMap) === null || _callbacks_onEntityCommunityMap === void 0 || _callbacks_onEntityCommunityMap.call(callbacks, data.data || data);
+                                    break;
+                                case 'candidate_risk_paths':
+                                    var _callbacks_onCandidateRiskPaths;
+                                    (_callbacks_onCandidateRiskPaths = callbacks.onCandidateRiskPaths) === null || _callbacks_onCandidateRiskPaths === void 0 || _callbacks_onCandidateRiskPaths.call(callbacks, data.data || data);
+                                    break;
+                                case 'risk_paths':
+                                    var _callbacks_onRiskPaths;
+                                    (_callbacks_onRiskPaths = callbacks.onRiskPaths) === null || _callbacks_onRiskPaths === void 0 || _callbacks_onRiskPaths.call(callbacks, data.data || data);
+                                    break;
+                                case 'anomaly_findings':
+                                    var _callbacks_onAnomalyFindings;
+                                    (_callbacks_onAnomalyFindings = callbacks.onAnomalyFindings) === null || _callbacks_onAnomalyFindings === void 0 || _callbacks_onAnomalyFindings.call(callbacks, data.data || data);
+                                    break;
+                                case 'compliance':
+                                    var _callbacks_onCompliance;
+                                    (_callbacks_onCompliance = callbacks.onCompliance) === null || _callbacks_onCompliance === void 0 || _callbacks_onCompliance.call(callbacks, data.data || data);
+                                    break;
+                                case 'compliance_scores':
+                                    var _callbacks_onComplianceScores;
+                                    (_callbacks_onComplianceScores = callbacks.onComplianceScores) === null || _callbacks_onComplianceScores === void 0 || _callbacks_onComplianceScores.call(callbacks, data.data || data);
+                                    break;
+                                case 'compliance_indicators':
+                                    var _callbacks_onComplianceIndicators;
+                                    (_callbacks_onComplianceIndicators = callbacks.onComplianceIndicators) === null || _callbacks_onComplianceIndicators === void 0 || _callbacks_onComplianceIndicators.call(callbacks, data.data || data);
+                                    break;
+                                case 'scoring':
+                                    var _callbacks_onScoring;
+                                    (_callbacks_onScoring = callbacks.onScoring) === null || _callbacks_onScoring === void 0 || _callbacks_onScoring.call(callbacks, data.data || data);
+                                    break;
+                                case 'governance':
+                                    var _callbacks_onGovernance;
+                                    (_callbacks_onGovernance = callbacks.onGovernance) === null || _callbacks_onGovernance === void 0 || _callbacks_onGovernance.call(callbacks, data.data || data);
+                                    break;
+                                case 'agent_trace':
+                                    var _callbacks_onAgentTrace;
+                                    (_callbacks_onAgentTrace = callbacks.onAgentTrace) === null || _callbacks_onAgentTrace === void 0 || _callbacks_onAgentTrace.call(callbacks, data.data || data);
+                                    break;
+                                case 'report':
+                                    var _callbacks_onReport;
+                                    doneFired = true;
+                                    (_callbacks_onReport = callbacks.onReport) === null || _callbacks_onReport === void 0 || _callbacks_onReport.call(callbacks, data.data || data);
+                                    break;
+                                case 'done':
+                                    var _callbacks_onDone;
+                                    if (!doneFired) (_callbacks_onDone = callbacks.onDone) === null || _callbacks_onDone === void 0 || _callbacks_onDone.call(callbacks, data.data || data);
+                                    break;
+                                case 'error':
+                                    var _data_data, _callbacks_onError;
+                                    (_callbacks_onError = callbacks.onError) === null || _callbacks_onError === void 0 || _callbacks_onError.call(callbacks, data.error || ((_data_data = data.data) === null || _data_data === void 0 ? void 0 : _data_data.error) || 'Unified stream error');
+                                    break;
+                            }
+                        } catch (parseErr) {
+                            console.error('[UnifiedSSE] parse error:', parseErr, raw);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            retryCount++;
+            if (retryCount < maxRetries && !aborted) {
+                const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 8000);
+                console.warn(`[UnifiedSSE] Retrying in ${delay}ms (${retryCount}/${maxRetries})...`);
+                await new Promise((r)=>setTimeout(r, delay));
+                connect();
+            } else {
+                var _callbacks_onError1;
+                (_callbacks_onError1 = callbacks.onError) === null || _callbacks_onError1 === void 0 || _callbacks_onError1.call(callbacks, err.message || 'Unified stream connection failed');
+            }
+        }
+    };
+    connect();
+    return ()=>{
+        aborted = true;
+        abortController === null || abortController === void 0 || abortController.abort();
+    };
+};
 const healthCheck = async ()=>{
     try {
         const resp = await _axios.default.get('/health', {
@@ -283,6 +578,413 @@ const healthCheck = async ()=>{
         return false;
     }
 };
+if (prevRefreshReg) self.$RefreshReg$ = prevRefreshReg;
+if (prevRefreshSig) self.$RefreshSig$ = prevRefreshSig;
+function registerClassComponent(filename, moduleExports) {
+    for(const key in moduleExports)try {
+        if (key === "__esModule") continue;
+        const exportValue = moduleExports[key];
+        if (_reactrefresh.isLikelyComponentType(exportValue) && exportValue.prototype && exportValue.prototype.isReactComponent) _reactrefresh.register(exportValue, filename + " " + key);
+    } catch (e) {}
+}
+function $RefreshIsReactComponentLike$(moduleExports) {
+    if (_reactrefresh.isLikelyComponentType(moduleExports || moduleExports.default)) return true;
+    for(var key in moduleExports)try {
+        if (_reactrefresh.isLikelyComponentType(moduleExports[key])) return true;
+    } catch (e) {}
+    return false;
+}
+registerClassComponent(module.id, module.exports);
+if ($RefreshIsReactComponentLike$(module.exports)) {
+    module.meta.hot.accept();
+    _reactrefresh.performReactRefresh();
+}
+
+},
+"src/pages/KnowledgeQA/components/AgentTracePanel.tsx": function (module, exports, __mako_require__){
+"use strict";
+__mako_require__.d(exports, "__esModule", {
+    value: true
+});
+__mako_require__.d(exports, "default", {
+    enumerable: true,
+    get: function() {
+        return _default;
+    }
+});
+var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
+var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
+var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
+var _antd = __mako_require__("node_modules/antd/es/index.js");
+var _react = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
+var prevRefreshReg;
+var prevRefreshSig;
+prevRefreshReg = self.$RefreshReg$;
+prevRefreshSig = self.$RefreshSig$;
+self.$RefreshReg$ = (type, id)=>{
+    _reactrefresh.register(type, module.id + id);
+};
+self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
+var _s = $RefreshSig$();
+const { Text, Paragraph } = _antd.Typography;
+const AGENT_COLORS = {
+    intent_agent: '#2855D1',
+    probe: '#722ed1',
+    planner: '#722ed1',
+    compiler: '#fa8c16',
+    verifier: '#52c41a',
+    risk_analyst: '#f5222d',
+    compliance: '#722ed1',
+    scoring: '#fa8c16',
+    governance: '#52c41a',
+    reporter: '#2855D1'
+};
+const AGENT_LABELS = {
+    intent_agent: '意图识别',
+    probe: '探查',
+    planner: '规划',
+    compiler: '编译',
+    verifier: '验证',
+    risk_analyst: '风险分析',
+    compliance: '合规匹配',
+    scoring: '风险评分',
+    governance: '治理方案',
+    reporter: '报告生成'
+};
+const AgentTracePanel = ({ traces, visible, onClose, onClear })=>{
+    _s();
+    const [expandedKeys, setExpandedKeys] = (0, _react.useState)([]);
+    const groupedTraces = (0, _react.useMemo)(()=>{
+        const groups = {};
+        for (const trace of traces){
+            if (!groups[trace.agent]) groups[trace.agent] = [];
+            groups[trace.agent].push(trace);
+        }
+        return groups;
+    }, [
+        traces
+    ]);
+    return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Drawer, {
+        title: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+            style: {
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+            },
+            children: [
+                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                    children: [
+                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.BugOutlined, {
+                            style: {
+                                marginRight: 8,
+                                color: '#fa8c16'
+                            }
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                            lineNumber: 80,
+                            columnNumber: 13
+                        }, void 0),
+                        "Agent 调试日志",
+                        traces.length > 0 && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                            style: {
+                                marginLeft: 8,
+                                borderRadius: 10
+                            },
+                            children: traces.length
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                            lineNumber: 83,
+                            columnNumber: 15
+                        }, void 0)
+                    ]
+                }, void 0, true, {
+                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                    lineNumber: 79,
+                    columnNumber: 11
+                }, void 0),
+                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
+                    size: 4,
+                    children: [
+                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
+                            title: "清空日志",
+                            children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                size: "small",
+                                type: "text",
+                                icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.ClearOutlined, {}, void 0, false, {
+                                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                    lineNumber: 91,
+                                    columnNumber: 23
+                                }, void 0),
+                                onClick: onClear,
+                                disabled: traces.length === 0
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                lineNumber: 88,
+                                columnNumber: 15
+                            }, void 0)
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                            lineNumber: 87,
+                            columnNumber: 13
+                        }, void 0),
+                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
+                            title: "关闭",
+                            children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                size: "small",
+                                type: "text",
+                                icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.CloseOutlined, {}, void 0, false, {
+                                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                    lineNumber: 97,
+                                    columnNumber: 54
+                                }, void 0),
+                                onClick: onClose
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                lineNumber: 97,
+                                columnNumber: 15
+                            }, void 0)
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                            lineNumber: 96,
+                            columnNumber: 13
+                        }, void 0)
+                    ]
+                }, void 0, true, {
+                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                    lineNumber: 86,
+                    columnNumber: 11
+                }, void 0)
+            ]
+        }, void 0, true, {
+            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+            lineNumber: 78,
+            columnNumber: 9
+        }, void 0),
+        open: visible,
+        onClose: onClose,
+        width: 480,
+        placement: "right",
+        styles: {
+            body: {
+                padding: '12px 16px'
+            }
+        },
+        children: traces.length === 0 ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Empty, {
+            image: _antd.Empty.PRESENTED_IMAGE_SIMPLE,
+            description: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
+                type: "secondary",
+                children: "暂无 Agent 调试日志，发送查询后自动采集"
+            }, void 0, false, {
+                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                lineNumber: 111,
+                columnNumber: 24
+            }, void 0)
+        }, void 0, false, {
+            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+            lineNumber: 109,
+            columnNumber: 9
+        }, this) : /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Collapse, {
+            size: "small",
+            activeKey: expandedKeys,
+            onChange: (keys)=>setExpandedKeys(Array.isArray(keys) ? keys : [
+                    keys
+                ]),
+            expandIcon: ({ isActive })=>isActive ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.DownOutlined, {}, void 0, false, {
+                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                    lineNumber: 118,
+                    columnNumber: 53
+                }, void 0) : /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.RightOutlined, {}, void 0, false, {
+                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                    lineNumber: 118,
+                    columnNumber: 72
+                }, void 0),
+            items: Object.entries(groupedTraces).map(([agent, entries])=>({
+                    key: agent,
+                    label: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                        },
+                        children: [
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    background: AGENT_COLORS[agent] || '#94a3b8'
+                                }
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                lineNumber: 123,
+                                columnNumber: 17
+                            }, void 0),
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
+                                strong: true,
+                                style: {
+                                    fontSize: 13
+                                },
+                                children: AGENT_LABELS[agent] || agent
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                lineNumber: 131,
+                                columnNumber: 17
+                            }, void 0),
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                style: {
+                                    borderRadius: 10,
+                                    fontSize: 10,
+                                    margin: 0
+                                },
+                                children: entries.length
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                lineNumber: 134,
+                                columnNumber: 17
+                            }, void 0)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                        lineNumber: 122,
+                        columnNumber: 15
+                    }, void 0),
+                    children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6
+                        },
+                        children: entries.map((entry, idx)=>/*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    padding: '8px 10px',
+                                    background: '#f8fafc',
+                                    borderRadius: 6,
+                                    border: '1px solid #e2e8f0'
+                                },
+                                children: [
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            marginBottom: 2
+                                        },
+                                        children: [
+                                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                strong: true,
+                                                style: {
+                                                    fontSize: 12,
+                                                    color: '#1e293b'
+                                                },
+                                                children: entry.step
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                                lineNumber: 150,
+                                                columnNumber: 23
+                                            }, void 0),
+                                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                type: "secondary",
+                                                style: {
+                                                    fontSize: 10
+                                                },
+                                                children: new Date(entry.timestamp).toLocaleTimeString()
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                                lineNumber: 151,
+                                                columnNumber: 23
+                                            }, void 0)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                        lineNumber: 149,
+                                        columnNumber: 21
+                                    }, void 0),
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Paragraph, {
+                                        ellipsis: {
+                                            rows: 2,
+                                            expandable: true
+                                        },
+                                        style: {
+                                            fontSize: 11,
+                                            color: '#475569',
+                                            marginBottom: 4
+                                        },
+                                        children: entry.summary
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                        lineNumber: 155,
+                                        columnNumber: 21
+                                    }, void 0),
+                                    entry.metrics && Object.keys(entry.metrics).length > 0 && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Collapse, {
+                                        size: "small",
+                                        ghost: true,
+                                        items: [
+                                            {
+                                                key: `metrics-${idx}`,
+                                                label: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                    style: {
+                                                        fontSize: 10,
+                                                        color: '#94a3b8'
+                                                    },
+                                                    children: "指标详情"
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                                    lineNumber: 167,
+                                                    columnNumber: 34
+                                                }, void 0),
+                                                children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("pre", {
+                                                    style: {
+                                                        fontSize: 10,
+                                                        background: '#1e293b',
+                                                        color: '#e2e8f0',
+                                                        padding: 8,
+                                                        borderRadius: 4,
+                                                        overflow: 'auto',
+                                                        maxHeight: 200,
+                                                        margin: 0
+                                                    },
+                                                    children: JSON.stringify(entry.metrics, null, 2)
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                                    lineNumber: 169,
+                                                    columnNumber: 29
+                                                }, void 0)
+                                            }
+                                        ]
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                        lineNumber: 162,
+                                        columnNumber: 23
+                                    }, void 0)
+                                ]
+                            }, idx, true, {
+                                fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                                lineNumber: 140,
+                                columnNumber: 19
+                            }, void 0))
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+                        lineNumber: 138,
+                        columnNumber: 15
+                    }, void 0)
+                }))
+        }, void 0, false, {
+            fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+            lineNumber: 114,
+            columnNumber: 9
+        }, this)
+    }, void 0, false, {
+        fileName: "src/pages/KnowledgeQA/components/AgentTracePanel.tsx",
+        lineNumber: 76,
+        columnNumber: 5
+    }, this);
+};
+_s(AgentTracePanel, "smp1C/wssgrP3BrzGeoWJZBbln4=");
+_c = AgentTracePanel;
+var _default = AgentTracePanel;
+var _c;
+$RefreshReg$(_c, "AgentTracePanel");
 if (prevRefreshReg) self.$RefreshReg$ = prevRefreshReg;
 if (prevRefreshSig) self.$RefreshSig$ = prevRefreshSig;
 function registerClassComponent(filename, moduleExports) {
@@ -720,6 +1422,1995 @@ if ($RefreshIsReactComponentLike$(module.exports)) {
 }
 
 },
+"src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx": function (module, exports, __mako_require__){
+"use strict";
+__mako_require__.d(exports, "__esModule", {
+    value: true
+});
+__mako_require__.d(exports, "default", {
+    enumerable: true,
+    get: function() {
+        return _default;
+    }
+});
+var _interop_require_default = __mako_require__("@swc/helpers/_/_interop_require_default");
+var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
+var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
+var _react = _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
+var _echartsforreact = _interop_require_default._(__mako_require__("node_modules/echarts-for-react/esm/index.js"));
+var _antd = __mako_require__("node_modules/antd/es/index.js");
+var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
+var prevRefreshReg;
+var prevRefreshSig;
+prevRefreshReg = self.$RefreshReg$;
+prevRefreshSig = self.$RefreshSig$;
+self.$RefreshReg$ = (type, id)=>{
+    _reactrefresh.register(type, module.id + id);
+};
+self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
+var _s = $RefreshSig$();
+const { Text, Title } = _antd.Typography;
+const L1_STYLE = {
+    '数据合规性': {
+        color: '#1677ff',
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.DatabaseOutlined, {}, void 0, false, {
+            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+            lineNumber: 66,
+            columnNumber: 38
+        }, this)
+    },
+    '算法合规性': {
+        color: '#722ed1',
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.AuditOutlined, {}, void 0, false, {
+            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+            lineNumber: 67,
+            columnNumber: 38
+        }, this)
+    },
+    '内容合规性': {
+        color: '#13a8a8',
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.SafetyCertificateOutlined, {}, void 0, false, {
+            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+            lineNumber: 68,
+            columnNumber: 38
+        }, this)
+    }
+};
+const DEFAULT_WEIGHTS = [
+    35,
+    35,
+    30
+];
+const WEIGHT_PRESETS = [
+    {
+        label: '默认 35/35/30',
+        values: [
+            35,
+            35,
+            30
+        ]
+    },
+    {
+        label: '内容优先 20/30/50',
+        values: [
+            20,
+            30,
+            50
+        ]
+    },
+    {
+        label: '算法优先 25/50/25',
+        values: [
+            25,
+            50,
+            25
+        ]
+    },
+    {
+        label: '数据优先 50/30/20',
+        values: [
+            50,
+            30,
+            20
+        ]
+    },
+    {
+        label: '均衡 34/33/33',
+        values: [
+            34,
+            33,
+            33
+        ]
+    }
+];
+const L1_ORDER = [
+    '数据合规性',
+    '算法合规性',
+    '内容合规性'
+];
+const SCORE_LEVELS = [
+    {
+        range: '90-100',
+        label: '高合规',
+        color: '#52c41a'
+    },
+    {
+        range: '75-89',
+        label: '较合规',
+        color: '#1677ff'
+    },
+    {
+        range: '60-74',
+        label: '中等合规',
+        color: '#fa8c16'
+    },
+    {
+        range: '0-59',
+        label: '低合规',
+        color: '#f5222d'
+    }
+];
+const TABLE_SCROLL_X = 514;
+const FULL_FALLBACK_INDICATORS = [
+    {
+        id: 'data-source-auth',
+        l1: '数据合规性',
+        l2: '数据来源合法性',
+        l3: '数据来源清单与授权证明',
+        objective: 80,
+        category: 'data_driven'
+    },
+    {
+        id: 'data-no-illegal',
+        l1: '数据合规性',
+        l2: '数据来源合法性',
+        l3: '禁止使用非法爬取、内幕信息等',
+        objective: 70,
+        category: 'policy_driven'
+    },
+    {
+        id: 'data-local-storage',
+        l1: '数据合规性',
+        l2: '数据跨境与本地化',
+        l3: '境内资本市场相关数据存储',
+        objective: 90,
+        category: 'policy_driven'
+    },
+    {
+        id: 'data-cross-border',
+        l1: '数据合规性',
+        l2: '数据跨境与本地化',
+        l3: '跨境数据传输履行安全评估与备案',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'data-quality-report',
+        l1: '数据合规性',
+        l2: '数据完整性与准确性',
+        l3: '建立数据质量评估报告',
+        objective: 80,
+        category: 'data_driven'
+    },
+    {
+        id: 'data-authoritative',
+        l1: '数据合规性',
+        l2: '数据完整性与准确性',
+        l3: '关键金融数据对接权威信源验证',
+        objective: 90,
+        category: 'evidence_based'
+    },
+    {
+        id: 'data-representation',
+        l1: '数据合规性',
+        l2: '数据偏见控制',
+        l3: '群体代表性分析',
+        objective: 70,
+        category: 'data_driven'
+    },
+    {
+        id: 'data-bias-mitigation',
+        l1: '数据合规性',
+        l2: '数据偏见控制',
+        l3: '数据偏见缓解机制',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'data-pipl-compliance',
+        l1: '数据合规性',
+        l2: '个人信息处理合规',
+        l3: '遵守个人信息保护法',
+        objective: 90,
+        category: 'policy_driven'
+    },
+    {
+        id: 'data-investor-consent',
+        l1: '数据合规性',
+        l2: '个人信息处理合规',
+        l3: '投资者画像数据单独授权',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'data-encryption',
+        l1: '数据合规性',
+        l2: '数据安全防护',
+        l3: '数据分级分类加密脱敏',
+        objective: 80,
+        category: 'data_driven'
+    },
+    {
+        id: 'data-breach-response',
+        l1: '数据合规性',
+        l2: '数据安全防护',
+        l3: '数据泄露应急响应机制与日志留存',
+        objective: 90,
+        category: 'policy_driven'
+    },
+    {
+        id: 'algo-gov-committee',
+        l1: '算法合规性',
+        l2: '算法治理与问责',
+        l3: '设立人工智能治理委员会',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'algo-lifecycle-mgmt',
+        l1: '算法合规性',
+        l2: '算法治理与问责',
+        l3: '算法全生命周期管理制度',
+        objective: 70,
+        category: 'policy_driven'
+    },
+    {
+        id: 'algo-filing',
+        l1: '算法合规性',
+        l2: '算法治理与问责',
+        l3: '算法备案信息与供应商清单',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'algo-third-party',
+        l1: '算法合规性',
+        l2: '算法治理与问责',
+        l3: '第三方模型血缘证明',
+        objective: 70,
+        category: 'evidence_based'
+    },
+    {
+        id: 'algo-bias-detect',
+        l1: '算法合规性',
+        l2: '算法公平性与非歧视',
+        l3: '偏见检测与缓解',
+        objective: 80,
+        category: 'data_driven'
+    },
+    {
+        id: 'algo-disparity-disclose',
+        l1: '算法合规性',
+        l2: '算法公平性与非歧视',
+        l3: '公开披露决策差异率',
+        objective: 70,
+        category: 'policy_driven'
+    },
+    {
+        id: 'algo-stress-test',
+        l1: '算法合规性',
+        l2: '算法公平性与非歧视',
+        l3: '反操纵与压力测试',
+        objective: 80,
+        category: 'evidence_based'
+    },
+    {
+        id: 'algo-no-inducement',
+        l1: '算法合规性',
+        l2: '算法公平性与非歧视',
+        l3: '禁止嵌入诱导性交易策略',
+        objective: 90,
+        category: 'policy_driven'
+    },
+    {
+        id: 'algo-explain-user',
+        l1: '算法合规性',
+        l2: '算法可解释性与安全',
+        l3: '用户可理解决策解释',
+        objective: 80,
+        category: 'evidence_based'
+    },
+    {
+        id: 'algo-explain-report',
+        l1: '算法合规性',
+        l2: '算法可解释性与安全',
+        l3: '可解释AI生成归因报告',
+        objective: 80,
+        category: 'evidence_based'
+    },
+    {
+        id: 'algo-robustness',
+        l1: '算法合规性',
+        l2: '算法可解释性与安全',
+        l3: '模型鲁棒性测试机制',
+        objective: 70,
+        category: 'evidence_based'
+    },
+    {
+        id: 'algo-failure-drill',
+        l1: '算法合规性',
+        l2: '算法可解释性与安全',
+        l3: '算法失效应急演练',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'content-authoritative-src',
+        l1: '内容合规性',
+        l2: '内容真实性与准确性',
+        l3: 'AI生成市场分析链接权威数据源',
+        objective: 80,
+        category: 'evidence_based'
+    },
+    {
+        id: 'content-hallucination-detect',
+        l1: '内容合规性',
+        l2: '内容真实性与准确性',
+        l3: 'AI幻觉检测拦截模块',
+        objective: 80,
+        category: 'evidence_based'
+    },
+    {
+        id: 'content-completeness',
+        l1: '内容合规性',
+        l2: '内容真实性与准确性',
+        l3: '信息完整性控制',
+        objective: 90,
+        category: 'data_driven'
+    },
+    {
+        id: 'content-ai-label',
+        l1: '内容合规性',
+        l2: '内容透明度与标识',
+        l3: 'AI生成内容强制标识',
+        objective: 90,
+        category: 'policy_driven'
+    },
+    {
+        id: 'content-traceable',
+        l1: '内容合规性',
+        l2: '内容透明度与标识',
+        l3: '用户可查询生成依据',
+        objective: 90,
+        category: 'evidence_based'
+    },
+    {
+        id: 'content-audit-log',
+        l1: '内容合规性',
+        l2: '内容透明度与标识',
+        l3: 'AI生成内容审计日志记录与追溯',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'content-no-fake-exec',
+        l1: '内容合规性',
+        l2: '反滥用与风险防控',
+        l3: '禁止生成高管虚假言论/伪造财报',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'content-sensitive-filter',
+        l1: '内容合规性',
+        l2: '反滥用与风险防控',
+        l3: '敏感词库与AI内容过滤系统',
+        objective: 90,
+        category: 'policy_driven'
+    },
+    {
+        id: 'content-investor-suitability',
+        l1: '内容合规性',
+        l2: '反滥用与风险防控',
+        l3: '投资者适当性匹配',
+        objective: 80,
+        category: 'policy_driven'
+    },
+    {
+        id: 'content-no-highrisk-push',
+        l1: '内容合规性',
+        l2: '反滥用与风险防控',
+        l3: '禁止向非合格投资者推送高风险策略',
+        objective: 90,
+        category: 'policy_driven'
+    }
+];
+function clamp(v) {
+    if (Number.isNaN(v)) return 0;
+    return Math.max(0, Math.min(100, Math.round(v * 10) / 10));
+}
+function getScoreColor(score) {
+    if (score >= 90) return '#52c41a';
+    if (score >= 75) return '#1677ff';
+    if (score >= 60) return '#fa8c16';
+    return '#f5222d';
+}
+function getScoreLabel(score) {
+    if (score >= 90) return '高合规';
+    if (score >= 75) return '较合规';
+    if (score >= 60) return '中等合规';
+    return '低合规';
+}
+function buildLegacyMetrics(report, currentSubgraph) {
+    var _report_evidence_chains, _report_evidence_chains1, _report_risk_scores, _report_risk_scores1, _report_risk_scores2, _report_risk_scores3, _report_risk_scores4;
+    const nodes = (currentSubgraph === null || currentSubgraph === void 0 ? void 0 : currentSubgraph.nodes) || [];
+    const paths = (report === null || report === void 0 ? void 0 : report.risk_paths) || [];
+    const matches = (report === null || report === void 0 ? void 0 : report.compliance_matches) || [];
+    const chains = (report === null || report === void 0 ? void 0 : (_report_evidence_chains = report.evidence_chains) === null || _report_evidence_chains === void 0 ? void 0 : _report_evidence_chains.chains) || [];
+    const nodesWithRichProps = nodes.filter((node)=>{
+        const props = node.properties || {};
+        return Object.keys(props).filter((key)=>props[key] !== undefined && props[key] !== null && props[key] !== '').length >= 3;
+    }).length;
+    const dataCompleteness = nodes.length > 0 ? nodesWithRichProps / nodes.length * 100 : 76;
+    const pathExplainability = paths.length > 0 ? paths.filter((path)=>path.path_description || path.path_text).length / paths.length * 100 : 72;
+    const avgComplianceConf = chains.length > 0 ? chains.reduce((sum, c)=>sum + (c.confidence || 0) * 100, 0) / chains.length : 82;
+    const evidenceConfidence = (report === null || report === void 0 ? void 0 : (_report_evidence_chains1 = report.evidence_chains) === null || _report_evidence_chains1 === void 0 ? void 0 : _report_evidence_chains1.overall_confidence) !== undefined ? report.evidence_chains.overall_confidence * 100 : 74;
+    const scoringCompleteness = (report === null || report === void 0 ? void 0 : (_report_risk_scores = report.risk_scores) === null || _report_risk_scores === void 0 ? void 0 : _report_risk_scores.final_overall) !== undefined ? 88 : 74;
+    const nodeTypeCount = new Set(nodes.map((node)=>node.type || node.entityType || node.entity_type).filter(Boolean)).size;
+    const dynamicScores = {
+        'data-source-auth': {
+            objective: nodes.length > 0 ? 90 : 68,
+            evidence: `${nodes.length || 0} 个证据子图节点`
+        },
+        'data-quality-report': {
+            objective: clamp(dataCompleteness),
+            evidence: `${nodesWithRichProps}/${nodes.length || 0} 个节点包含完整属性`
+        },
+        'data-representation': {
+            objective: nodeTypeCount >= 3 ? 85 : 72,
+            evidence: `子图覆盖 ${nodeTypeCount} 类实体，用于群体代表性分析`
+        },
+        'data-authoritative': {
+            objective: clamp((evidenceConfidence + avgComplianceConf) / 2),
+            evidence: `证据链置信度 ${Math.round(evidenceConfidence)}%，合规匹配 ${matches.length} 条`
+        },
+        'data-encryption': {
+            objective: 85,
+            evidence: '敏感字段仅在详情面板展示，建议结合数据分级策略复核'
+        },
+        'algo-lifecycle-mgmt': {
+            objective: scoringCompleteness,
+            evidence: `综合风险评分 ${(report === null || report === void 0 ? void 0 : (_report_risk_scores1 = report.risk_scores) === null || _report_risk_scores1 === void 0 ? void 0 : _report_risk_scores1.final_overall) ?? '待生成'}`
+        },
+        'algo-filing': {
+            objective: matches.length > 0 ? 78 : 72,
+            evidence: `${matches.length} 条合规匹配记录可用于备案信息复核`
+        },
+        'algo-third-party': {
+            objective: clamp(65 + chains.length * 3),
+            evidence: `基于 ${chains.length} 条证据链，模型血缘可追溯性待复核`
+        },
+        'algo-bias-detect': {
+            objective: paths.length > 0 && nodeTypeCount >= 3 ? 85 : 75,
+            evidence: `${paths.length} 条风险路径覆盖 ${nodeTypeCount} 类实体`
+        },
+        'algo-stress-test': {
+            objective: (report === null || report === void 0 ? void 0 : (_report_risk_scores2 = report.risk_scores) === null || _report_risk_scores2 === void 0 ? void 0 : _report_risk_scores2.final_overall) !== undefined ? 80 : 76,
+            evidence: `综合风险评分 ${(report === null || report === void 0 ? void 0 : (_report_risk_scores3 = report.risk_scores) === null || _report_risk_scores3 === void 0 ? void 0 : _report_risk_scores3.final_overall) ?? '待生成'}，建议纳入压力测试`
+        },
+        'algo-explain-user': {
+            objective: clamp(pathExplainability),
+            evidence: `${paths.length} 条风险路径具备说明`
+        },
+        'algo-explain-report': {
+            objective: clamp(evidenceConfidence),
+            evidence: `${chains.length} 条证据链支撑归因报告`
+        },
+        'algo-robustness': {
+            objective: (report === null || report === void 0 ? void 0 : (_report_risk_scores4 = report.risk_scores) === null || _report_risk_scores4 === void 0 ? void 0 : _report_risk_scores4.final_overall) !== undefined ? 78 : 70,
+            evidence: '基于风险评分稳定性与证据链一致性初步评估'
+        },
+        'content-authoritative-src': {
+            objective: clamp(avgComplianceConf),
+            evidence: `${matches.length} 条法规/证据匹配用于权威数据源校验`
+        },
+        'content-hallucination-detect': {
+            objective: clamp((avgComplianceConf + evidenceConfidence) / 2),
+            evidence: `合规匹配置信度与证据链置信度联合评估`
+        },
+        'content-completeness': {
+            objective: clamp((dataCompleteness + 90) / 2),
+            evidence: `${nodesWithRichProps}/${nodes.length || 0} 个节点包含完整属性`
+        },
+        'content-traceable': {
+            objective: chains.length > 0 ? clamp(70 + chains.length * 5) : 82,
+            evidence: `${chains.length} 条证据链可追溯`
+        }
+    };
+    return FULL_FALLBACK_INDICATORS.map((item)=>{
+        var _dynamicScores_item_id, _dynamicScores_item_id1, _dynamicScores_item_id2;
+        return {
+            ...item,
+            objective: ((_dynamicScores_item_id = dynamicScores[item.id]) === null || _dynamicScores_item_id === void 0 ? void 0 : _dynamicScores_item_id.objective) ?? item.objective,
+            evidence: ((_dynamicScores_item_id1 = dynamicScores[item.id]) === null || _dynamicScores_item_id1 === void 0 ? void 0 : _dynamicScores_item_id1.evidence) ?? item.evidence ?? `需人工复核：${item.l3}`,
+            key: item.id,
+            subjective: 0,
+            score: clamp(((_dynamicScores_item_id2 = dynamicScores[item.id]) === null || _dynamicScores_item_id2 === void 0 ? void 0 : _dynamicScores_item_id2.objective) ?? item.objective)
+        };
+    });
+}
+const ComplianceAnalysisPanel = ({ report, currentSubgraph, isLoading, onJumpToGraph, complianceIndicators })=>{
+    _s();
+    const [subjectiveMap, setSubjectiveMap] = (0, _react.useState)({});
+    const [draftSubjectiveMap, setDraftSubjectiveMap] = (0, _react.useState)({});
+    const [weights, setWeights] = (0, _react.useState)(DEFAULT_WEIGHTS);
+    const [chartsExpanded, setChartsExpanded] = (0, _react.useState)(true);
+    const [isMaximized, setIsMaximized] = (0, _react.useState)(false);
+    const handleKeyDown = (0, _react.useCallback)((e)=>{
+        if (e.key === 'Escape') setIsMaximized(false);
+    }, []);
+    (0, _react.useEffect)(()=>{
+        if (isMaximized) {
+            document.addEventListener('keydown', handleKeyDown);
+            return ()=>document.removeEventListener('keydown', handleKeyDown);
+        }
+        return undefined;
+    }, [
+        isMaximized,
+        handleKeyDown
+    ]);
+    const updateWeight = (0, _react.useCallback)((index, rawValue)=>{
+        const value = Math.max(0, Math.min(100, Math.round(rawValue ?? weights[index] ?? 0)));
+        const next = [
+            ...weights
+        ];
+        const otherIndexes = next.map((_, i)=>i).filter((i)=>i !== index);
+        const otherSum = otherIndexes.reduce((sum, i)=>sum + next[i], 0);
+        const targetOtherSum = 100 - value;
+        next[index] = value;
+        if (otherSum > 0) otherIndexes.forEach((i)=>{
+            next[i] = Math.round(next[i] / otherSum * targetOtherSum);
+        });
+        else {
+            const first = otherIndexes[0];
+            const second = otherIndexes[1];
+            next[first] = Math.floor(targetOtherSum / 2);
+            next[second] = targetOtherSum - next[first];
+        }
+        const diff = 100 - next.reduce((sum, item)=>sum + item, 0);
+        if (diff !== 0) {
+            const targetIndex = otherIndexes.find((i)=>next[i] + diff >= 0) ?? index;
+            next[targetIndex] += diff;
+        }
+        setWeights(next);
+    }, [
+        weights
+    ]);
+    const updateSubjectiveDraft = (0, _react.useCallback)((indicatorId, rawValue)=>{
+        const value = Math.max(-10, Math.min(10, Math.round(rawValue ?? 0)));
+        setDraftSubjectiveMap((prev)=>{
+            const next = {
+                ...prev
+            };
+            const committed = subjectiveMap[indicatorId] ?? 0;
+            if (value === committed) delete next[indicatorId];
+            else next[indicatorId] = value;
+            return next;
+        });
+    }, [
+        subjectiveMap
+    ]);
+    const confirmSubjectiveDraft = (0, _react.useCallback)(()=>{
+        setSubjectiveMap((prev)=>({
+                ...prev,
+                ...draftSubjectiveMap
+            }));
+        setDraftSubjectiveMap({});
+    }, [
+        draftSubjectiveMap
+    ]);
+    const cancelSubjectiveDraft = (0, _react.useCallback)(()=>{
+        setDraftSubjectiveMap({});
+    }, []);
+    const draftSubjectiveCount = Object.keys(draftSubjectiveMap).length;
+    const scoredIndicators = (0, _react.useMemo)(()=>{
+        const source = complianceIndicators && complianceIndicators.length > 0 ? complianceIndicators : null;
+        if (source) return source.map((ind)=>{
+            const sub = subjectiveMap[ind.id] ?? 0;
+            const score = clamp(ind.objective + sub);
+            return {
+                ...ind,
+                key: ind.id,
+                subjective: sub,
+                score
+            };
+        });
+        const legacy = buildLegacyMetrics(report, currentSubgraph);
+        return legacy.map((m)=>({
+                ...m,
+                subjective: subjectiveMap[m.id] ?? 0,
+                score: clamp(m.objective + (subjectiveMap[m.id] ?? 0))
+            }));
+    }, [
+        complianceIndicators,
+        report,
+        currentSubgraph,
+        subjectiveMap
+    ]);
+    const hierarchy = (0, _react.useMemo)(()=>{
+        const l2Map = new Map();
+        for (const ind of scoredIndicators){
+            const key = `${ind.l1}|||${ind.l2}`;
+            if (!l2Map.has(key)) l2Map.set(key, []);
+            l2Map.get(key).push(ind);
+        }
+        const l1Map = new Map();
+        for (const [key, children] of l2Map){
+            const [l1Name, l2Name] = key.split('|||');
+            const l2Score = clamp(children.reduce((s, c)=>s + c.score, 0) / children.length);
+            if (!l1Map.has(l1Name)) l1Map.set(l1Name, []);
+            l1Map.get(l1Name).push({
+                key: `${l1Name}|||${l2Name}`,
+                name: l2Name,
+                l1Name,
+                score: l2Score,
+                children
+            });
+        }
+        const l1Summaries = L1_ORDER.filter((name)=>l1Map.has(name)).map((name, idx)=>{
+            const children = l1Map.get(name);
+            const l1Score = clamp(children.reduce((s, c)=>s + c.score, 0) / children.length);
+            return {
+                key: name,
+                name,
+                weight: weights[idx] / 100,
+                score: l1Score,
+                children
+            };
+        });
+        return l1Summaries;
+    }, [
+        scoredIndicators,
+        weights
+    ]);
+    const overallScore = (0, _react.useMemo)(()=>{
+        if (hierarchy.length === 0) return 0;
+        let total = 0;
+        let totalWeight = 0;
+        for(let i = 0; i < hierarchy.length; i++){
+            const w = weights[i] / 100;
+            total += hierarchy[i].score * w;
+            totalWeight += w;
+        }
+        return totalWeight > 0 ? clamp(total / totalWeight) : 0;
+    }, [
+        hierarchy,
+        weights
+    ]);
+    const treeData = (0, _react.useMemo)(()=>{
+        return hierarchy.map((l1)=>({
+                key: l1.key,
+                name: l1.name,
+                l1Name: l1.name,
+                l2Name: null,
+                l3Name: null,
+                level: 1,
+                objective: null,
+                subjective: null,
+                score: l1.score,
+                weight: l1.weight,
+                evidence: '',
+                category: '',
+                indicatorId: null,
+                children: l1.children.map((l2)=>({
+                        key: l2.key,
+                        name: l2.name,
+                        l1Name: l1.name,
+                        l2Name: l2.name,
+                        l3Name: null,
+                        level: 2,
+                        objective: null,
+                        subjective: null,
+                        score: l2.score,
+                        weight: null,
+                        evidence: '',
+                        category: '',
+                        indicatorId: null,
+                        children: l2.children.map((l3)=>({
+                                key: l3.id,
+                                name: l3.l3,
+                                l1Name: l1.name,
+                                l2Name: l2.name,
+                                l3Name: l3.l3,
+                                level: 3,
+                                objective: l3.objective,
+                                subjective: l3.subjective,
+                                score: l3.score,
+                                weight: null,
+                                evidence: l3.evidence,
+                                category: l3.category,
+                                indicatorId: l3.id
+                            }))
+                    }))
+            }));
+    }, [
+        hierarchy
+    ]);
+    const radarOption = (0, _react.useMemo)(()=>({
+            tooltip: {
+                trigger: 'item'
+            },
+            radar: {
+                center: [
+                    '50%',
+                    '54%'
+                ],
+                radius: '62%',
+                indicator: hierarchy.map((l1)=>({
+                        name: l1.name,
+                        max: 100
+                    })),
+                axisName: {
+                    color: '#475569',
+                    fontSize: 11,
+                    padding: [
+                        2,
+                        4
+                    ]
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: '#e2e8f0'
+                    }
+                },
+                splitArea: {
+                    areaStyle: {
+                        color: [
+                            '#ffffff',
+                            '#f8fafc'
+                        ]
+                    }
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: '#cbd5e1'
+                    }
+                }
+            },
+            series: [
+                {
+                    type: 'radar',
+                    data: [
+                        {
+                            value: hierarchy.map((l1)=>l1.score),
+                            name: '综合分',
+                            areaStyle: {
+                                color: 'rgba(22,119,255,0.18)'
+                            },
+                            lineStyle: {
+                                color: '#1677ff',
+                                width: 2
+                            },
+                            itemStyle: {
+                                color: '#1677ff'
+                            }
+                        }
+                    ]
+                }
+            ]
+        }), [
+        hierarchy
+    ]);
+    const barOption = (0, _react.useMemo)(()=>({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'shadow'
+                }
+            },
+            grid: {
+                left: 20,
+                right: 12,
+                top: 18,
+                bottom: 20,
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: hierarchy.map((l1)=>l1.name.replace('合规性', '')),
+                axisLabel: {
+                    color: '#475569',
+                    fontSize: 10
+                },
+                axisTick: {
+                    show: false
+                }
+            },
+            yAxis: {
+                type: 'value',
+                max: 100,
+                axisLabel: {
+                    color: '#94a3b8',
+                    fontSize: 10
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: '#f1f5f9'
+                    }
+                }
+            },
+            series: [
+                {
+                    name: '一级得分',
+                    type: 'bar',
+                    data: hierarchy.map((l1)=>({
+                            value: l1.score,
+                            itemStyle: {
+                                color: getScoreColor(l1.score),
+                                borderRadius: [
+                                    4,
+                                    4,
+                                    0,
+                                    0
+                                ]
+                            }
+                        })),
+                    barMaxWidth: 34,
+                    label: {
+                        show: true,
+                        position: 'top',
+                        color: '#475569',
+                        fontSize: 11,
+                        formatter: '{c}'
+                    }
+                }
+            ]
+        }), [
+        hierarchy
+    ]);
+    const l2RadarOptions = (0, _react.useMemo)(()=>hierarchy.map((l1)=>{
+            var _L1_STYLE_l1_name;
+            const color = ((_L1_STYLE_l1_name = L1_STYLE[l1.name]) === null || _L1_STYLE_l1_name === void 0 ? void 0 : _L1_STYLE_l1_name.color) || '#1677ff';
+            return {
+                key: l1.key,
+                title: l1.name.replace('合规性', ''),
+                color,
+                option: {
+                    tooltip: {
+                        trigger: 'item'
+                    },
+                    radar: {
+                        center: [
+                            '50%',
+                            '56%'
+                        ],
+                        radius: '58%',
+                        indicator: l1.children.map((l2)=>({
+                                name: l2.name,
+                                max: 100
+                            })),
+                        axisName: {
+                            color: '#475569',
+                            fontSize: 10,
+                            padding: [
+                                2,
+                                4
+                            ]
+                        },
+                        splitLine: {
+                            lineStyle: {
+                                color: '#e2e8f0'
+                            }
+                        },
+                        splitArea: {
+                            areaStyle: {
+                                color: [
+                                    '#ffffff',
+                                    '#f8fafc'
+                                ]
+                            }
+                        },
+                        axisLine: {
+                            lineStyle: {
+                                color: '#cbd5e1'
+                            }
+                        }
+                    },
+                    series: [
+                        {
+                            type: 'radar',
+                            data: [
+                                {
+                                    value: l1.children.map((l2)=>l2.score),
+                                    name: `${l1.name}二级指标`,
+                                    areaStyle: {
+                                        color: `${color}24`
+                                    },
+                                    lineStyle: {
+                                        color,
+                                        width: 2
+                                    },
+                                    itemStyle: {
+                                        color
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            };
+        }), [
+        hierarchy
+    ]);
+    const treeColumns = (0, _react.useMemo)(()=>[
+            {
+                title: '指标',
+                dataIndex: 'name',
+                width: 238,
+                render: (_, record)=>{
+                    if (record.level === 1) {
+                        const style = L1_STYLE[record.name] || {
+                            color: '#8c8c8c',
+                            icon: null
+                        };
+                        return (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                            color: style.color,
+                            style: {
+                                margin: 0,
+                                fontWeight: 600,
+                                whiteSpace: 'normal',
+                                lineHeight: '20px'
+                            },
+                            children: [
+                                style.icon,
+                                " ",
+                                record.name
+                            ]
+                        }, void 0, true, {
+                            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                            lineNumber: 534,
+                            columnNumber: 13
+                        }, this);
+                    }
+                    if (record.level === 2) return (0, _jsxdevruntime.jsxDEV)(Text, {
+                        style: {
+                            display: 'block',
+                            fontSize: 12,
+                            fontWeight: 500,
+                            whiteSpace: 'normal'
+                        },
+                        children: record.name
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 540,
+                        columnNumber: 18
+                    }, this);
+                    return (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
+                        title: record.evidence,
+                        children: (0, _jsxdevruntime.jsxDEV)(Text, {
+                            style: {
+                                display: 'inline',
+                                fontSize: 12,
+                                cursor: 'help',
+                                borderBottom: '1px dashed #cbd5e1',
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word'
+                            },
+                            children: record.name
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                            lineNumber: 544,
+                            columnNumber: 13
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 543,
+                        columnNumber: 11
+                    }, this);
+                }
+            },
+            {
+                title: '客观分',
+                dataIndex: 'objective',
+                width: 96,
+                align: 'center',
+                render: (v, record)=>{
+                    if (record.level !== 3 || v === null) return null;
+                    return (0, _jsxdevruntime.jsxDEV)(_antd.Progress, {
+                        percent: Math.round(v),
+                        size: "small",
+                        strokeColor: getScoreColor(v),
+                        format: ()=>(0, _jsxdevruntime.jsxDEV)("span", {
+                                style: {
+                                    whiteSpace: 'nowrap'
+                                },
+                                children: v
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 570,
+                                columnNumber: 27
+                            }, void 0),
+                        style: {
+                            minWidth: 74,
+                            margin: 0
+                        }
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 566,
+                        columnNumber: 11
+                    }, this);
+                }
+            },
+            {
+                title: '主观修正',
+                dataIndex: 'subjective',
+                width: 92,
+                align: 'center',
+                render: (_, record)=>{
+                    if (record.level !== 3 || record.indicatorId === null) return null;
+                    const draftValue = draftSubjectiveMap[record.indicatorId];
+                    const hasDraft = draftValue !== undefined;
+                    return (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                        },
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)(_antd.InputNumber, {
+                                size: "small",
+                                min: -10,
+                                max: 10,
+                                step: 1,
+                                value: hasDraft ? draftValue : record.subjective ?? 0,
+                                onChange: (val)=>updateSubjectiveDraft(record.indicatorId, typeof val === 'number' ? val : 0),
+                                style: {
+                                    width: 72,
+                                    borderColor: hasDraft ? '#fa8c16' : undefined,
+                                    boxShadow: hasDraft ? '0 0 0 1px rgba(250,140,22,0.12)' : undefined
+                                }
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 587,
+                                columnNumber: 13
+                            }, this),
+                            hasDraft && (0, _jsxdevruntime.jsxDEV)("span", {
+                                style: {
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: 6,
+                                    background: '#fa8c16',
+                                    flexShrink: 0
+                                }
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 600,
+                                columnNumber: 26
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 586,
+                        columnNumber: 11
+                    }, this);
+                }
+            },
+            {
+                title: '得分',
+                dataIndex: 'score',
+                width: 88,
+                align: 'center',
+                sorter: (a, b)=>a.score - b.score,
+                render: (v, record)=>(0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            minWidth: 70,
+                            whiteSpace: 'nowrap'
+                        },
+                        children: [
+                            record.level <= 2 && (0, _jsxdevruntime.jsxDEV)(_antd.Progress, {
+                                percent: Math.round(v),
+                                size: "small",
+                                strokeColor: getScoreColor(v),
+                                showInfo: false,
+                                style: {
+                                    width: 36,
+                                    margin: 0
+                                }
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 621,
+                                columnNumber: 13
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                strong: true,
+                                style: {
+                                    color: getScoreColor(v),
+                                    fontSize: record.level === 1 ? 14 : 13,
+                                    whiteSpace: 'nowrap'
+                                },
+                                children: v.toFixed(record.level === 3 ? 0 : 1)
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 629,
+                                columnNumber: 11
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 612,
+                        columnNumber: 9
+                    }, this)
+            }
+        ], [
+        draftSubjectiveMap,
+        updateSubjectiveDraft
+    ]);
+    if (!report && !isLoading) return (0, _jsxdevruntime.jsxDEV)("div", {
+        style: {
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        },
+        children: (0, _jsxdevruntime.jsxDEV)(_antd.Empty, {
+            description: "生成治理报告后展示合规指标评分",
+            image: _antd.Empty.PRESENTED_IMAGE_SIMPLE
+        }, void 0, false, {
+            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+            lineNumber: 642,
+            columnNumber: 9
+        }, this)
+    }, void 0, false, {
+        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+        lineNumber: 641,
+        columnNumber: 7
+    }, this);
+    const panelContent = (0, _jsxdevruntime.jsxDEV)("div", {
+        style: {
+            height: '100%',
+            overflow: 'auto',
+            padding: '12px 16px',
+            background: isMaximized ? '#f8fafc' : '#f8fafc',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            minHeight: 0
+        },
+        children: [
+            (0, _jsxdevruntime.jsxDEV)("section", {
+                style: {
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 8,
+                    padding: 14,
+                    flexShrink: 0
+                },
+                children: [
+                    (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: 12
+                        },
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 16
+                                },
+                                children: [
+                                    (0, _jsxdevruntime.jsxDEV)(_antd.Progress, {
+                                        type: "circle",
+                                        percent: Math.round(overallScore),
+                                        size: 72,
+                                        strokeColor: getScoreColor(overallScore),
+                                        format: (p)=>(0, _jsxdevruntime.jsxDEV)("span", {
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            fontSize: 18,
+                                                            fontWeight: 700
+                                                        },
+                                                        children: p
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 666,
+                                                        columnNumber: 19
+                                                    }, void 0),
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            fontSize: 10,
+                                                            color: '#64748b'
+                                                        },
+                                                        children: getScoreLabel(overallScore)
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 667,
+                                                        columnNumber: 19
+                                                    }, void 0)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 665,
+                                                columnNumber: 17
+                                            }, void 0)
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 659,
+                                        columnNumber: 13
+                                    }, this),
+                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                        children: (0, _jsxdevruntime.jsxDEV)("div", {
+                                            style: {
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8
+                                            },
+                                            children: [
+                                                (0, _jsxdevruntime.jsxDEV)(Title, {
+                                                    level: 5,
+                                                    style: {
+                                                        margin: 0,
+                                                        fontSize: 15
+                                                    },
+                                                    children: [
+                                                        (0, _jsxdevruntime.jsxDEV)(_icons.SafetyCertificateOutlined, {
+                                                            style: {
+                                                                color: '#13a8a8',
+                                                                marginRight: 6
+                                                            }
+                                                        }, void 0, false, {
+                                                            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                            lineNumber: 674,
+                                                            columnNumber: 19
+                                                        }, this),
+                                                        "合规分析面板"
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                    lineNumber: 673,
+                                                    columnNumber: 17
+                                                }, this),
+                                                (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                                    size: "small",
+                                                    type: "text",
+                                                    icon: isMaximized ? (0, _jsxdevruntime.jsxDEV)(_icons.FullscreenExitOutlined, {}, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 680,
+                                                        columnNumber: 39
+                                                    }, void 0) : (0, _jsxdevruntime.jsxDEV)(_icons.FullscreenOutlined, {}, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 680,
+                                                        columnNumber: 68
+                                                    }, void 0),
+                                                    onClick: ()=>setIsMaximized(!isMaximized),
+                                                    style: {
+                                                        color: '#94a3b8'
+                                                    }
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                    lineNumber: 677,
+                                                    columnNumber: 17
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                            lineNumber: 672,
+                                            columnNumber: 15
+                                        }, this)
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 671,
+                                        columnNumber: 13
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 658,
+                                columnNumber: 11
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'flex',
+                                    gap: 24,
+                                    alignItems: 'center'
+                                },
+                                children: hierarchy.map((l1, idx)=>(0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            textAlign: 'center'
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                style: {
+                                                    fontSize: 11,
+                                                    color: '#64748b'
+                                                },
+                                                children: l1.name
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 690,
+                                                columnNumber: 17
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                children: (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                    strong: true,
+                                                    style: {
+                                                        fontSize: 18,
+                                                        color: getScoreColor(l1.score)
+                                                    },
+                                                    children: l1.score.toFixed(1)
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                    lineNumber: 692,
+                                                    columnNumber: 19
+                                                }, this)
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 691,
+                                                columnNumber: 17
+                                            }, this)
+                                        ]
+                                    }, l1.key, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 689,
+                                        columnNumber: 15
+                                    }, this))
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 687,
+                                columnNumber: 11
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 657,
+                        columnNumber: 9
+                    }, this),
+                    (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            marginTop: 12,
+                            padding: '10px 12px',
+                            background: '#f8fafc',
+                            borderRadius: 6,
+                            border: '1px solid #e2e8f0'
+                        },
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'flex',
+                                    gap: 6,
+                                    flexWrap: 'wrap',
+                                    marginBottom: 10
+                                },
+                                children: WEIGHT_PRESETS.map((preset)=>{
+                                    const active = weights.join('/') === preset.values.join('/');
+                                    return (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                        size: "small",
+                                        type: active ? 'primary' : 'default',
+                                        onClick: ()=>setWeights([
+                                                ...preset.values
+                                            ]),
+                                        style: {
+                                            borderRadius: 6,
+                                            fontSize: 11
+                                        },
+                                        children: preset.label
+                                    }, preset.label, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 705,
+                                        columnNumber: 17
+                                    }, this);
+                                })
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 701,
+                                columnNumber: 11
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                    gap: 14
+                                },
+                                children: hierarchy.map((l1, idx)=>{
+                                    var _L1_STYLE_l1_name;
+                                    return (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            display: 'grid',
+                                            gridTemplateColumns: '52px minmax(92px, 1fr) 78px',
+                                            alignItems: 'center',
+                                            gap: 8
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                color: (_L1_STYLE_l1_name = L1_STYLE[l1.name]) === null || _L1_STYLE_l1_name === void 0 ? void 0 : _L1_STYLE_l1_name.color,
+                                                style: {
+                                                    margin: 0,
+                                                    textAlign: 'center',
+                                                    borderRadius: 6
+                                                },
+                                                children: l1.name.replace('合规性', '')
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 720,
+                                                columnNumber: 17
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)(_antd.Slider, {
+                                                style: {
+                                                    margin: 0
+                                                },
+                                                min: 0,
+                                                max: 100,
+                                                step: 1,
+                                                value: weights[idx],
+                                                onChange: (val)=>updateWeight(idx, val)
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 723,
+                                                columnNumber: 17
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 4
+                                                },
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)(_antd.InputNumber, {
+                                                        size: "small",
+                                                        min: 0,
+                                                        max: 100,
+                                                        step: 1,
+                                                        value: weights[idx],
+                                                        onChange: (val)=>updateWeight(idx, typeof val === 'number' ? val : null),
+                                                        style: {
+                                                            width: 56
+                                                        }
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 732,
+                                                        columnNumber: 19
+                                                    }, this),
+                                                    (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                        style: {
+                                                            fontSize: 12,
+                                                            color: '#475569'
+                                                        },
+                                                        children: "%"
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 741,
+                                                        columnNumber: 19
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 731,
+                                                columnNumber: 17
+                                            }, this)
+                                        ]
+                                    }, l1.key, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 719,
+                                        columnNumber: 15
+                                    }, this);
+                                })
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 717,
+                                columnNumber: 11
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 700,
+                        columnNumber: 9
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                lineNumber: 656,
+                columnNumber: 7
+            }, this),
+            (0, _jsxdevruntime.jsxDEV)("section", {
+                style: {
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    flexShrink: 0
+                },
+                children: [
+                    (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginBottom: chartsExpanded ? 4 : 0,
+                            cursor: 'pointer'
+                        },
+                        onClick: ()=>setChartsExpanded(!chartsExpanded),
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)(_icons.BarChartOutlined, {
+                                style: {
+                                    color: '#1677ff'
+                                }
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 755,
+                                columnNumber: 11
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                strong: true,
+                                style: {
+                                    fontSize: 13
+                                },
+                                children: "一级指标对比"
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 756,
+                                columnNumber: 11
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    flex: 1
+                                }
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 757,
+                                columnNumber: 11
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                type: "secondary",
+                                style: {
+                                    fontSize: 10
+                                },
+                                children: chartsExpanded ? '收起' : '展开'
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 758,
+                                columnNumber: 11
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 751,
+                        columnNumber: 9
+                    }, this),
+                    chartsExpanded && (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'flex',
+                                    alignItems: 'stretch',
+                                    gap: 12,
+                                    flexWrap: 'wrap'
+                                },
+                                children: [
+                                    (0, _jsxdevruntime.jsxDEV)(_echartsforreact.default, {
+                                        option: radarOption,
+                                        style: {
+                                            height: 176,
+                                            minWidth: 220,
+                                            flex: '1 1 260px'
+                                        }
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 763,
+                                        columnNumber: 15
+                                    }, this),
+                                    (0, _jsxdevruntime.jsxDEV)(_echartsforreact.default, {
+                                        option: barOption,
+                                        style: {
+                                            height: 176,
+                                            minWidth: 240,
+                                            flex: '1.1 1 280px'
+                                        }
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 764,
+                                        columnNumber: 15
+                                    }, this),
+                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            width: 118,
+                                            marginLeft: 'auto',
+                                            flexShrink: 0,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 6,
+                                            justifyContent: 'center',
+                                            alignSelf: 'stretch'
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                type: "secondary",
+                                                style: {
+                                                    fontSize: 11,
+                                                    textAlign: 'right'
+                                                },
+                                                children: "评分等级"
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 775,
+                                                columnNumber: 17
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: 4
+                                                },
+                                                children: SCORE_LEVELS.map((item)=>(0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'flex-end',
+                                                            gap: 5
+                                                        },
+                                                        children: [
+                                                            (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                style: {
+                                                                    width: 7,
+                                                                    height: 7,
+                                                                    borderRadius: 2,
+                                                                    background: item.color,
+                                                                    flexShrink: 0
+                                                                }
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                                lineNumber: 779,
+                                                                columnNumber: 23
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                style: {
+                                                                    fontSize: 10,
+                                                                    color: '#475569',
+                                                                    lineHeight: '14px'
+                                                                },
+                                                                children: item.label
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                                lineNumber: 780,
+                                                                columnNumber: 23
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                type: "secondary",
+                                                                style: {
+                                                                    fontSize: 10,
+                                                                    lineHeight: '14px'
+                                                                },
+                                                                children: item.range
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                                lineNumber: 781,
+                                                                columnNumber: 23
+                                                            }, this)
+                                                        ]
+                                                    }, item.label, true, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 778,
+                                                        columnNumber: 21
+                                                    }, this))
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 776,
+                                                columnNumber: 17
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 765,
+                                        columnNumber: 15
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 762,
+                                columnNumber: 13
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                                    gap: 12,
+                                    marginTop: 10
+                                },
+                                children: l2RadarOptions.map((item)=>(0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            minHeight: 190,
+                                            border: '1px solid #e2e8f0',
+                                            borderRadius: 8,
+                                            background: '#fbfdff',
+                                            padding: '8px 10px 4px'
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    marginBottom: 2
+                                                },
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)("span", {
+                                                        style: {
+                                                            width: 8,
+                                                            height: 8,
+                                                            borderRadius: 8,
+                                                            background: item.color
+                                                        }
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 800,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                        strong: true,
+                                                        style: {
+                                                            fontSize: 12
+                                                        },
+                                                        children: [
+                                                            item.title,
+                                                            "二级指标对比"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                        lineNumber: 801,
+                                                        columnNumber: 21
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 799,
+                                                columnNumber: 19
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)(_echartsforreact.default, {
+                                                option: item.option,
+                                                style: {
+                                                    height: 166,
+                                                    width: '100%'
+                                                }
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                                lineNumber: 803,
+                                                columnNumber: 19
+                                            }, this)
+                                        ]
+                                    }, item.key, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 789,
+                                        columnNumber: 17
+                                    }, this))
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 787,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true)
+                ]
+            }, void 0, true, {
+                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                lineNumber: 750,
+                columnNumber: 7
+            }, this),
+            (0, _jsxdevruntime.jsxDEV)("section", {
+                style: {
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 8,
+                    padding: 12,
+                    flex: '0 0 auto',
+                    minHeight: 0,
+                    overflow: 'visible',
+                    display: 'flex',
+                    flexDirection: 'column'
+                },
+                children: [
+                    (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            marginBottom: 8,
+                            flexWrap: 'wrap'
+                        },
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                strong: true,
+                                style: {
+                                    fontSize: 13,
+                                    display: 'block',
+                                    flexShrink: 0
+                                },
+                                children: [
+                                    "指标评分明细 ",
+                                    scoredIndicators.length,
+                                    " 个三级指标"
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 817,
+                                columnNumber: 11
+                            }, this),
+                            draftSubjectiveCount > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    padding: '4px 6px',
+                                    borderRadius: 6,
+                                    background: '#fff7e6',
+                                    border: '1px solid #ffd591'
+                                },
+                                children: [
+                                    (0, _jsxdevruntime.jsxDEV)(Text, {
+                                        style: {
+                                            fontSize: 12,
+                                            color: '#ad6800'
+                                        },
+                                        children: [
+                                            draftSubjectiveCount,
+                                            " 项主观修正待确认"
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 822,
+                                        columnNumber: 15
+                                    }, this),
+                                    (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                        size: "small",
+                                        type: "primary",
+                                        onClick: confirmSubjectiveDraft,
+                                        style: {
+                                            height: 24,
+                                            fontSize: 12
+                                        },
+                                        children: "确认应用"
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 823,
+                                        columnNumber: 15
+                                    }, this),
+                                    (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                        size: "small",
+                                        onClick: cancelSubjectiveDraft,
+                                        style: {
+                                            height: 24,
+                                            fontSize: 12
+                                        },
+                                        children: "撤销"
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                        lineNumber: 826,
+                                        columnNumber: 15
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                                lineNumber: 821,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 816,
+                        columnNumber: 9
+                    }, this),
+                    (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            minHeight: 0,
+                            overflowX: 'auto',
+                            overflowY: 'visible'
+                        },
+                        children: (0, _jsxdevruntime.jsxDEV)(_antd.Table, {
+                            size: "small",
+                            rowKey: "key",
+                            columns: treeColumns,
+                            dataSource: treeData,
+                            pagination: false,
+                            defaultExpandAllRows: true,
+                            sticky: true,
+                            tableLayout: "fixed",
+                            scroll: {
+                                x: TABLE_SCROLL_X
+                            },
+                            rowClassName: (record)=>record.level === 1 ? 'l1-row' : '',
+                            onRow: (record)=>{
+                                if (record.level === 1) return {};
+                                return {};
+                            }
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                            lineNumber: 833,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                        lineNumber: 832,
+                        columnNumber: 9
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                lineNumber: 812,
+                columnNumber: 7
+            }, this)
+        ]
+    }, void 0, true, {
+        fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+        lineNumber: 650,
+        columnNumber: 5
+    }, this);
+    if (isMaximized) return (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
+        children: [
+            (0, _jsxdevruntime.jsxDEV)("div", {
+                style: {
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 1040,
+                    background: 'rgba(0,0,0,0.45)'
+                },
+                onClick: ()=>setIsMaximized(false)
+            }, void 0, false, {
+                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                lineNumber: 859,
+                columnNumber: 9
+            }, this),
+            (0, _jsxdevruntime.jsxDEV)("div", {
+                style: {
+                    position: 'fixed',
+                    inset: 24,
+                    zIndex: 1050
+                },
+                children: panelContent
+            }, void 0, false, {
+                fileName: "src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx",
+                lineNumber: 863,
+                columnNumber: 9
+            }, this)
+        ]
+    }, void 0, true);
+    return panelContent;
+};
+_s(ComplianceAnalysisPanel, "sHYPk7y6MzZCPZUdc5AYh8eWOUA=");
+_c = ComplianceAnalysisPanel;
+var _default = ComplianceAnalysisPanel;
+var _c;
+$RefreshReg$(_c, "ComplianceAnalysisPanel");
+if (prevRefreshReg) self.$RefreshReg$ = prevRefreshReg;
+if (prevRefreshSig) self.$RefreshSig$ = prevRefreshSig;
+function registerClassComponent(filename, moduleExports) {
+    for(const key in moduleExports)try {
+        if (key === "__esModule") continue;
+        const exportValue = moduleExports[key];
+        if (_reactrefresh.isLikelyComponentType(exportValue) && exportValue.prototype && exportValue.prototype.isReactComponent) _reactrefresh.register(exportValue, filename + " " + key);
+    } catch (e) {}
+}
+function $RefreshIsReactComponentLike$(moduleExports) {
+    if (_reactrefresh.isLikelyComponentType(moduleExports || moduleExports.default)) return true;
+    for(var key in moduleExports)try {
+        if (_reactrefresh.isLikelyComponentType(moduleExports[key])) return true;
+    } catch (e) {}
+    return false;
+}
+registerClassComponent(module.id, module.exports);
+if ($RefreshIsReactComponentLike$(module.exports)) {
+    module.meta.hot.accept();
+    _reactrefresh.performReactRefresh();
+}
+
+},
 "src/pages/KnowledgeQA/components/ContextTagBar.tsx": function (module, exports, __mako_require__){
 "use strict";
 __mako_require__.d(exports, "__esModule", {
@@ -1026,9 +3717,9 @@ var _react = _interop_require_wildcard._(__mako_require__("node_modules/react/in
 var _antd = __mako_require__("node_modules/antd/es/index.js");
 var _g6 = _interop_require_default._(__mako_require__("node_modules/@antv/g6/es/index.js"));
 var _axios = _interop_require_default._(__mako_require__("node_modules/axios/index.js"));
-var _LegendPanel = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/LegendPanel.tsx"));
 var _NodeContextMenu = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/NodeContextMenu.tsx"));
 var _GraphToolbar = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/GraphToolbar.tsx"));
+var _graphStyles = __mako_require__("src/pages/KnowledgeQA/components/graphStyles.ts");
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -1038,7 +3729,6 @@ self.$RefreshReg$ = (type, id)=>{
 };
 self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
 var _s = $RefreshSig$();
-const { Text } = _antd.Typography;
 const VALID_NODE_TYPES = new Set([
     'COMPANY',
     'PERSON',
@@ -1053,66 +3743,138 @@ const VALID_NODE_TYPES = new Set([
 ]);
 const NODE_VISUAL = {
     COMPANY: {
-        color: '#FFC101',
+        fill: '#BAE7FF',
+        stroke: '#1677ff',
         size: 34,
         labelOffset: 10
     },
     PERSON: {
-        color: '#1890FF',
+        fill: '#D3ADF7',
+        stroke: '#722ed1',
         size: 26,
         labelOffset: 8
     },
     EVENT: {
-        color: '#FF6B6B',
+        fill: '#FFA39E',
+        stroke: '#cf1322',
         size: 30,
         labelOffset: 10
     },
     SUB_EVENT: {
-        color: '#FF9999',
+        fill: '#FFCCC7',
+        stroke: '#cf1322',
         size: 20,
         labelOffset: 6
     },
     TIME: {
-        color: '#FF8C00',
+        fill: '#D9D9D9',
+        stroke: '#595959',
         size: 16,
         labelOffset: 5
     },
     RiskFeature: {
-        color: '#4CAF50',
+        fill: '#B7EB8F',
+        stroke: '#389e0d',
         size: 24,
         labelOffset: 8
     },
     RiskFactor: {
-        color: '#9C27B0',
+        fill: '#95DE64',
+        stroke: '#389e0d',
         size: 22,
         labelOffset: 7
     },
     Action: {
-        color: '#45B7D1',
+        fill: '#D9D9D9',
+        stroke: '#595959',
         size: 22,
         labelOffset: 7
     },
     Regulation: {
-        color: '#FFC101',
+        fill: '#FFE58F',
+        stroke: '#d48806',
         size: 20,
         labelOffset: 6
     },
     Law: {
-        color: '#1890FF',
+        fill: '#FFD666',
+        stroke: '#d48806',
         size: 18,
         labelOffset: 6
     }
 };
+const NODE_DEFAULT_VISUAL = {
+    fill: '#F5F5F5',
+    stroke: '#8c8c8c',
+    size: 14,
+    labelOffset: 5
+};
+const RELATION_TEXT = {
+    INVEST: '投资',
+    GUARANTEE: '担保',
+    WORK: '任职',
+    CONTROLLER: '控制',
+    MENTION: '涉及',
+    TRIGGERS: '触发',
+    REFLECTS: '反映',
+    COMPLIES_WITH: '合规',
+    CAUSE: '因果',
+    BELONG: '归属',
+    TRANSACTION: '交易',
+    WARNING: '预警',
+    RELATED: '关联'
+};
+const COMMUNITY_COLORS = [
+    '#1890ff',
+    '#f5222d',
+    '#52c41a',
+    '#fa8c16',
+    '#722ed1',
+    '#13c2c2',
+    '#eb2f96',
+    '#faad14',
+    '#2f54eb',
+    '#a0d911',
+    '#f759ab',
+    '#5cdbd3'
+];
+const COMMUNITY_BG_COLORS = [
+    'rgba(24,144,255,0.12)',
+    'rgba(245,34,45,0.12)',
+    'rgba(82,196,26,0.12)',
+    'rgba(250,140,22,0.12)',
+    'rgba(114,46,209,0.12)',
+    'rgba(19,194,194,0.12)',
+    'rgba(235,47,150,0.12)',
+    'rgba(250,173,20,0.12)',
+    'rgba(47,84,235,0.12)',
+    'rgba(160,217,17,0.12)',
+    'rgba(247,89,171,0.12)',
+    'rgba(92,219,211,0.12)'
+];
+const getCommunityColor = (communityId)=>{
+    const idx = (communityId - 1) % COMMUNITY_COLORS.length;
+    return {
+        stroke: COMMUNITY_COLORS[idx],
+        bg: COMMUNITY_BG_COLORS[idx]
+    };
+};
 const normalizeNeo4jNode = (raw)=>{
+    var _rawType_toUpperCase;
     const props = raw.properties || {};
     const labels = raw.labels || [];
+    let rawType = raw.type || labels[0] || 'Unknown';
+    const type = rawType === 'Company' ? 'COMPANY' : rawType === 'Person' ? 'PERSON' : rawType === 'Event' ? 'EVENT' : rawType === 'Subject' ? 'COMPANY' : rawType === 'Feature' ? 'RiskFeature' : rawType === 'Regulation' ? 'Regulation' : rawType === 'Law' ? 'Law' : VALID_NODE_TYPES.has(rawType) ? rawType : rawType === 'PFCOMPANY' || rawType === 'PFUND' || rawType === 'SECURITY' ? 'COMPANY' : rawType === 'REGULATOR' ? 'EVENT' : ((_rawType_toUpperCase = rawType.toUpperCase) === null || _rawType_toUpperCase === void 0 ? void 0 : _rawType_toUpperCase.call(rawType)) || rawType;
     return {
         id: String(raw.id),
-        type: labels[0] || 'Unknown',
-        score: props.score ?? 1,
-        title: props.title || props.name || props.COMPANY_NM || raw.id,
-        name: props.name || props.COMPANY_NM || props.title || raw.id,
-        zh_name: props.zh_name || props.name,
+        type,
+        entityType: type,
+        entity_type: type,
+        label: raw.label || props.title || props.name || props.COMPANY_NM || raw.id,
+        score: props.score ?? raw.score ?? 1,
+        title: props.title || props.name || props.COMPANY_NM || raw.label || raw.id,
+        name: props.name || props.COMPANY_NM || props.title || raw.label || raw.id,
+        zh_name: props.zh_name || raw.label || props.name,
         overview: props.overview || props.RISK_INFO || '',
         popularity: props.popularity,
         rating: props.rating,
@@ -1125,6 +3887,36 @@ const normalizeNeo4jEdge = (raw)=>({
         relation: raw.label || raw.relation || raw.type || 'RELATED'
     });
 const EDGE_STYLE_MAP = {
+    INVEST: {
+        stroke: '#1890ff',
+        lineDash: [],
+        lineWidth: 2,
+        opacity: 0.8
+    },
+    GUARANTEE: {
+        stroke: '#faad14',
+        lineDash: [],
+        lineWidth: 2,
+        opacity: 0.8
+    },
+    WORK: {
+        stroke: '#722ed1',
+        lineDash: [],
+        lineWidth: 1.5,
+        opacity: 0.7
+    },
+    CONTROLLER: {
+        stroke: '#722ed1',
+        lineDash: [],
+        lineWidth: 1.5,
+        opacity: 0.7
+    },
+    MENTION: {
+        stroke: '#f5222d',
+        lineDash: [],
+        lineWidth: 2,
+        opacity: 0.8
+    },
     TRIGGERS: {
         stroke: '#f5222d',
         lineDash: [],
@@ -1139,21 +3931,9 @@ const EDGE_STYLE_MAP = {
     },
     COMPLIES_WITH: {
         stroke: '#722ed1',
-        lineDash: [
-            4,
-            4
-        ],
+        lineDash: [],
         lineWidth: 1.5,
         opacity: 0.7
-    },
-    MENTION: {
-        stroke: '#45B7D1',
-        lineDash: [
-            2,
-            3
-        ],
-        lineWidth: 1,
-        opacity: 0.5
     },
     CAUSE: {
         stroke: '#fa541c',
@@ -1163,10 +3943,7 @@ const EDGE_STYLE_MAP = {
     },
     BELONG: {
         stroke: '#52c41a',
-        lineDash: [
-            2,
-            3
-        ],
+        lineDash: [],
         lineWidth: 1,
         opacity: 0.5
     }
@@ -1177,11 +3954,78 @@ const EDGE_DEFAULT_STYLE = {
     lineWidth: 0.8,
     opacity: 0.4
 };
-const buildG6Data = (subgraph, subjectIds, neighborIds)=>{
+const PATH_EDGE_KEY_SEP = '->';
+const assignReadablePositions = (nodes, edges)=>{
+    var _nodes_slice_sort_, _center_style, _center_style1, _center_style2;
+    if (nodes.length === 0) return;
+    const adjacency = new Map();
+    const relationMap = new Map();
+    nodes.forEach((node)=>adjacency.set(node.id, new Set()));
+    edges.forEach((edge)=>{
+        var _adjacency_get, _adjacency_get1;
+        const source = String(edge.source);
+        const target = String(edge.target);
+        (_adjacency_get = adjacency.get(source)) === null || _adjacency_get === void 0 || _adjacency_get.add(target);
+        (_adjacency_get1 = adjacency.get(target)) === null || _adjacency_get1 === void 0 || _adjacency_get1.add(source);
+        relationMap.set(`${source}${PATH_EDGE_KEY_SEP}${target}`, edge.relation || '');
+        relationMap.set(`${target}${PATH_EDGE_KEY_SEP}${source}`, edge.relation || '');
+    });
+    const centerId = (_nodes_slice_sort_ = nodes.slice().sort((a, b)=>{
+        var _adjacency_get, _adjacency_get1;
+        const degreeDiff = (((_adjacency_get = adjacency.get(b.id)) === null || _adjacency_get === void 0 ? void 0 : _adjacency_get.size) || 0) - (((_adjacency_get1 = adjacency.get(a.id)) === null || _adjacency_get1 === void 0 ? void 0 : _adjacency_get1.size) || 0);
+        if (degreeDiff !== 0) return degreeDiff;
+        if (a._type === 'COMPANY' && b._type !== 'COMPANY') return -1;
+        if (b._type === 'COMPANY' && a._type !== 'COMPANY') return 1;
+        return String(a.label).localeCompare(String(b.label), 'zh-CN');
+    })[0]) === null || _nodes_slice_sort_ === void 0 ? void 0 : _nodes_slice_sort_.id;
+    const center = nodes.find((node)=>node.id === centerId) || nodes[0];
+    center.x = 0;
+    center.y = 0;
+    center.size = Math.max(Number(center.size) || 0, 72);
+    center.style = {
+        ...center.style || {},
+        lineWidth: Math.max(Number((_center_style = center.style) === null || _center_style === void 0 ? void 0 : _center_style.lineWidth) || 0, 4),
+        shadowBlur: Math.max(Number((_center_style1 = center.style) === null || _center_style1 === void 0 ? void 0 : _center_style1.shadowBlur) || 0, 14),
+        shadowColor: ((_center_style2 = center.style) === null || _center_style2 === void 0 ? void 0 : _center_style2.shadowColor) || 'rgba(40, 85, 209, 0.28)'
+    };
+    const centerNeighbors = new Set(adjacency.get(center.id) || []);
+    const ringNodes = nodes.filter((node)=>node.id !== center.id).sort((a, b)=>{
+        const relationA = relationMap.get(`${center.id}${PATH_EDGE_KEY_SEP}${a.id}`) || 'ZZZ';
+        const relationB = relationMap.get(`${center.id}${PATH_EDGE_KEY_SEP}${b.id}`) || 'ZZZ';
+        const relationOrder = [
+            'INVEST',
+            'MENTION',
+            'WORK',
+            'REFLECTS',
+            'GUARANTEE',
+            'CONTROLLER'
+        ];
+        const relationDiff = relationOrder.indexOf(relationA) - relationOrder.indexOf(relationB);
+        if (relationDiff !== 0) return relationDiff;
+        return String(a.label).localeCompare(String(b.label), 'zh-CN');
+    });
+    const oneHop = ringNodes.filter((node)=>centerNeighbors.has(node.id));
+    const otherHop = ringNodes.filter((node)=>!centerNeighbors.has(node.id));
+    const radius = Math.max(170, Math.min(230, nodes.length * 24));
+    const startAngle = -Math.PI / 2;
+    const placeOnRing = (items, r, angleOffset = 0)=>{
+        const count = Math.max(1, items.length);
+        items.forEach((node, index)=>{
+            const angle = startAngle + angleOffset + Math.PI * 2 * index / count;
+            node.x = Math.cos(angle) * r;
+            node.y = Math.sin(angle) * r;
+        });
+    };
+    placeOnRing(oneHop, radius);
+    placeOnRing(otherHop, radius + 170, Math.PI / Math.max(3, otherHop.length || 3));
+};
+const buildG6Data = (subgraph, subjectIds, neighborIds, entityCommunityMap)=>{
+    var _subgraph_nodes, _subgraph_edges, _subgraph_paths;
     if (!subgraph) return {
         nodes: [],
         edges: []
     };
+    console.log('[EnhancedGraphPanel] input nodes=%d edges=%d paths=%d', ((_subgraph_nodes = subgraph.nodes) === null || _subgraph_nodes === void 0 ? void 0 : _subgraph_nodes.length) || 0, ((_subgraph_edges = subgraph.edges) === null || _subgraph_edges === void 0 ? void 0 : _subgraph_edges.length) || 0, ((_subgraph_paths = subgraph.paths) === null || _subgraph_paths === void 0 ? void 0 : _subgraph_paths.length) || 0);
     const subjectIdSet = new Set((subjectIds || []).map(String));
     const neighborIdSet = new Set((neighborIds || []).map(String));
     const degreeMap = new Map();
@@ -1193,70 +4037,150 @@ const buildG6Data = (subgraph, subjectIds, neighborIds)=>{
     }
     const maxDegree = Math.max(1, ...Array.from(degreeMap.values()));
     const scaleSize = (degree)=>{
-        const minSize = 18;
-        const maxSize = 50;
+        const minSize = 26;
+        const maxSize = 64;
         return minSize + degree / maxDegree * (maxSize - minSize);
     };
     const pathNodeIds = new Set();
     const pathEdgeKeys = new Set();
+    const pathEdgeIds = new Set();
     for (const path of subgraph.paths || []){
         for (const nid of path.nodeIds || [])pathNodeIds.add(String(nid));
+        if (path.edgeIds && path.edgeIds.length > 0) for (const eid of path.edgeIds)pathEdgeIds.add(String(eid));
         const nids = path.nodeIds || [];
         for(let i = 0; i < nids.length - 1; i++){
+            pathEdgeKeys.add(`${nids[i]}${PATH_EDGE_KEY_SEP}${nids[i + 1]}`);
+            pathEdgeKeys.add(`${nids[i + 1]}${PATH_EDGE_KEY_SEP}${nids[i]}`);
             pathEdgeKeys.add(`${nids[i]}→${nids[i + 1]}`);
             pathEdgeKeys.add(`${nids[i + 1]}→${nids[i]}`);
         }
     }
+    const nodeCommunityMap = new Map();
+    if (entityCommunityMap === null || entityCommunityMap === void 0 ? void 0 : entityCommunityMap.entities) {
+        for (const entry of entityCommunityMap.entities)if (entry.communities && entry.communities.length > 0) {
+            const key = entry.name || entry.id;
+            nodeCommunityMap.set(key, {
+                communityIds: entry.communities.map((c)=>c.community_id),
+                roles: entry.communities.map((c)=>c.role)
+            });
+        }
+    }
+    const resolveNodeType = (node)=>{
+        const t = node.type;
+        if (t && VALID_NODE_TYPES.has(t)) return t;
+        if (t) {
+            const upper = t.toUpperCase();
+            if (upper === 'COMPANY' || upper === 'SUBJECT') return 'COMPANY';
+            if (upper === 'PERSON') return 'PERSON';
+            if (upper === 'EVENT') return 'EVENT';
+            if (upper === 'SUB_EVENT') return 'SUB_EVENT';
+            if (upper === 'TIME') return 'TIME';
+            if (VALID_NODE_TYPES.has(upper)) return upper;
+        }
+        const entType = node.entityType;
+        if (entType && VALID_NODE_TYPES.has(entType)) return entType;
+        const entType2 = node.entity_type;
+        if (entType2 && VALID_NODE_TYPES.has(entType2)) return entType2;
+        const labels = node.labels;
+        if (labels && labels.length > 0) {
+            for (const label of labels){
+                const upper = typeof label === 'string' ? label.toUpperCase() : '';
+                if (upper === 'COMPANY' || upper === 'SUBJECT') return 'COMPANY';
+                if (upper === 'PERSON') return 'PERSON';
+                if (upper === 'EVENT') return 'EVENT';
+                if (upper === 'SUB_EVENT') return 'SUB_EVENT';
+                if (upper === 'TIME') return 'TIME';
+                if (VALID_NODE_TYPES.has(label)) return label;
+            }
+            const first = String(labels[0]);
+            if (VALID_NODE_TYPES.has(first)) return first;
+            const upperFirst = first.toUpperCase();
+            if (VALID_NODE_TYPES.has(upperFirst)) return upperFirst;
+        }
+        return 'COMPANY';
+    };
+    const resolveEdgeRelation = (edge)=>{
+        return edge.relation || edge.label || edge.type || 'RELATED';
+    };
     const validNodeIds = new Set();
-    const nodes = subgraph.nodes.filter((n)=>VALID_NODE_TYPES.has(n.type)).map((node)=>{
+    const nodes = subgraph.nodes.filter((n)=>{
+        const nt = resolveNodeType(n);
+        if (nt === '' || !VALID_NODE_TYPES.has(nt)) {
+            console.warn('[EnhancedGraphPanel] Dropped node — resolved type not in VALID_NODE_TYPES:', {
+                id: n.id,
+                title: n.title,
+                type: n.type,
+                resolvedType: nt
+            });
+            return false;
+        }
+        return true;
+    }).map((node)=>{
+        var _this;
         const nodeIdStr = String(node.id);
+        const nodeType = resolveNodeType(node);
         validNodeIds.add(nodeIdStr);
-        const visual = NODE_VISUAL[node.type] ?? {
-            color: '#a1a1aa',
-            size: 14,
-            labelOffset: 5
-        };
-        let label = String(node.title || node.zh_name || node.name || node.id);
+        const visual = NODE_VISUAL[nodeType] ?? NODE_DEFAULT_VISUAL;
+        let label = String(node.title || node.label || node.zh_name || node.name || node.id);
         if (label.length > 15) label = label.slice(0, 12) + '...';
-        const riskLevel = node.risk_level || node.riskLevel;
-        const riskColor = riskLevel === 'high' ? '#f5222d' : riskLevel === 'medium' ? '#fa8c16' : riskLevel === 'low' ? '#52c41a' : null;
-        const fillColor = riskColor || visual.color;
+        const riskLevel = node.risk_level;
+        const complianceScore = node.compliance_score ?? ((_this = node.properties) === null || _this === void 0 ? void 0 : _this.compliance_score);
+        const riskVisual = riskLevel ? _graphStyles.RISK_LEVEL_VISUAL[riskLevel] : null;
+        const fillColor = (riskVisual === null || riskVisual === void 0 ? void 0 : riskVisual.bg) || visual.fill;
+        const strokeColor = (riskVisual === null || riskVisual === void 0 ? void 0 : riskVisual.border) || visual.stroke;
         const deg = degreeMap.get(nodeIdStr) || 1;
         const nodeSize = scaleSize(deg);
         const isPathNode = pathNodeIds.has(nodeIdStr);
         const isSubject = subjectIdSet.has(nodeIdStr);
         const isNeighbor = neighborIdSet.has(nodeIdStr);
-        const borderColor = isSubject ? '#2855D1' : isNeighbor ? '#1890FF' : isPathNode ? '#2855D1' : node.type === 'COMPANY' ? fillColor : 'transparent';
-        const borderWidth = isSubject ? 4 : isNeighbor ? 2 : isPathNode ? 3 : node.type === 'COMPANY' ? 2 : 0;
-        const finalSize = isSubject ? nodeSize * 1.3 : isNeighbor ? nodeSize * 1.1 : nodeSize;
+        const nodeName = String(node.title || node.name || node.zh_name || '');
+        const communityMatch = nodeCommunityMap.get(nodeName) || nodeCommunityMap.get(String(node.id));
+        const communityIds = (communityMatch === null || communityMatch === void 0 ? void 0 : communityMatch.communityIds) || [];
+        const communityRoles = (communityMatch === null || communityMatch === void 0 ? void 0 : communityMatch.roles) || [];
+        const isBridge = communityRoles.includes('bridge') || communityIds.length >= 2;
+        const primaryCommunityId = communityIds.length > 0 ? communityIds[0] : null;
+        const communityColor = primaryCommunityId != null ? getCommunityColor(primaryCommunityId) : null;
+        const communityFill = communityColor && !isSubject && !isPathNode ? communityColor.bg : undefined;
+        const communityStroke = communityColor ? communityColor.stroke : undefined;
+        const borderColor = isSubject ? '#2855D1' : isNeighbor ? '#1890FF' : isPathNode ? strokeColor : isBridge ? communityStroke || strokeColor : communityStroke || strokeColor;
+        const borderWidth = isSubject ? 4 : isNeighbor ? 2 : isPathNode ? 2.5 : isBridge ? 3 : 2;
+        const finalSize = isSubject ? nodeSize * 1.3 : isBridge ? nodeSize * 1.2 : isNeighbor ? nodeSize * 1.1 : nodeSize;
+        const lineDash = isBridge ? [
+            4,
+            2
+        ] : undefined;
         return {
             id: nodeIdStr,
             label,
-            _type: node.type,
+            _type: nodeType,
             type: 'circle',
             size: finalSize,
             _riskLevel: riskLevel || null,
+            _complianceScore: complianceScore ?? null,
             _isPathNode: isPathNode,
             _isSubject: isSubject,
             _isNeighbor: isNeighbor,
             _degree: deg,
+            _communityIds: communityIds,
+            _isBridge: isBridge,
             style: {
-                fill: fillColor,
+                fill: communityFill || fillColor,
                 stroke: borderColor,
                 lineWidth: borderWidth,
+                lineDash: lineDash,
                 cursor: 'pointer',
-                shadowColor: isSubject ? 'rgba(40, 85, 209, 0.4)' : undefined,
-                shadowBlur: isSubject ? 12 : 0
+                shadowColor: riskLevel === 'high' ? 'rgba(245, 34, 45, 0.6)' : isSubject ? 'rgba(40, 85, 209, 0.4)' : isPathNode ? 'rgba(40, 85, 209, 0.22)' : undefined,
+                shadowBlur: riskLevel === 'high' ? 20 : isSubject ? 12 : isPathNode ? 8 : 0
             },
             labelCfg: {
                 position: 'bottom',
                 offset: visual.labelOffset + Math.max(0, (finalSize - 20) * 0.3),
                 style: {
                     fill: '#1e293b',
-                    fontSize: isSubject ? 13 : node.type === 'COMPANY' ? 12 : 10,
-                    fontWeight: isSubject ? 800 : isNeighbor || isPathNode ? 700 : node.type === 'COMPANY' ? 600 : 500,
+                    fontSize: isSubject ? 13 : nodeType === 'COMPANY' ? 12 : 10,
+                    fontWeight: isSubject ? 800 : isNeighbor || isPathNode ? 700 : nodeType === 'COMPANY' ? 600 : 500,
                     background: {
-                        fill: 'rgba(255, 255, 255, 0.85)',
+                        fill: 'rgba(255, 255, 255, 0.92)',
                         padding: [
                             2,
                             4,
@@ -1269,51 +4193,61 @@ const buildG6Data = (subgraph, subjectIds, neighborIds)=>{
             }
         };
     });
+    let renderedPathEdgeCount = 0;
     const edges = subgraph.edges.filter((e)=>validNodeIds.has(String(e.source)) && validNodeIds.has(String(e.target))).map((edge, idx)=>{
-        const relStyle = EDGE_STYLE_MAP[edge.relation] ?? EDGE_DEFAULT_STYLE;
+        const relation = resolveEdgeRelation(edge);
+        const relationLabel = RELATION_TEXT[relation] || _graphStyles.RELATION_LABELS[relation] || relation;
+        const relStyle = EDGE_STYLE_MAP[relation] ?? EDGE_DEFAULT_STYLE;
+        const confidence = edge.confidence;
+        const confWidthAdj = confidence !== undefined ? confidence > 0.8 ? 1 : confidence < 0.5 ? -0.5 : 0 : 0;
+        const confOpacityAdj = confidence !== undefined && confidence < 0.5 ? 0.6 : 1;
         const edgeKey = `${edge.source}→${edge.target}`;
-        const isPathEdge = pathEdgeKeys.has(edgeKey);
+        const readableEdgeKey = `${edge.source}${PATH_EDGE_KEY_SEP}${edge.target}`;
+        const isPathEdge = pathEdgeKeys.has(readableEdgeKey) || pathEdgeKeys.has(edgeKey) || pathEdgeIds.has(String(edge.id || ''));
+        if (isPathEdge) renderedPathEdgeCount += 1;
         return {
-            id: `edge-${idx}`,
+            id: String(edge.id || `edge-${idx}`),
             source: String(edge.source),
             target: String(edge.target),
-            relation: edge.relation,
-            type: 'quadratic',
+            relation,
+            type: 'line',
             _isPathEdge: isPathEdge,
-            label: edge.relation,
+            label: relationLabel,
             labelCfg: {
                 autoRotate: true,
                 refX: 0,
                 refY: 2,
                 style: {
-                    fontSize: 9,
-                    fill: '#475569',
-                    fontWeight: 500,
+                    fontSize: 11,
+                    fill: '#334155',
+                    fontWeight: 700,
                     background: {
-                        fill: 'rgba(255, 255, 255, 0.88)',
+                        fill: 'rgba(255, 255, 255, 0.96)',
                         padding: [
-                            1,
-                            4,
-                            1,
-                            4
+                            2,
+                            5,
+                            2,
+                            5
                         ],
-                        radius: 3
+                        radius: 4
                     }
                 }
             },
             style: {
                 ...relStyle,
-                endArrow: true,
-                curvature: 0.15,
-                lineWidth: isPathEdge ? (relStyle.lineWidth || 1) * 2.5 : relStyle.lineWidth,
+                lineWidth: isPathEdge ? Math.max(3, (relStyle.lineWidth || 1) * 1.8) : relStyle.lineWidth + confWidthAdj,
                 stroke: isPathEdge ? '#2855D1' : relStyle.stroke,
-                lineDash: isPathEdge ? [
-                    8,
-                    4
-                ] : relStyle.lineDash,
-                opacity: isPathEdge ? 1 : relStyle.opacity
+                lineDash: [],
+                opacity: isPathEdge ? 1 : relStyle.opacity * confOpacityAdj,
+                endArrow: true
             }
         };
+    });
+    assignReadablePositions(nodes, edges);
+    console.log(`[buildG6Data] rendered nodes=${nodes.length} edges=${edges.length} pathNodes=${pathNodeIds.size} pathEdges=${renderedPathEdgeCount}`);
+    console.log('[buildG6Data] rendered details:', {
+        pathEdgeKeys: pathEdgeKeys.size,
+        pathEdgeIds: pathEdgeIds.size
     });
     return {
         nodes,
@@ -1322,7 +4256,7 @@ const buildG6Data = (subgraph, subjectIds, neighborIds)=>{
         pathEdgeKeys
     };
 };
-const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignmentFeatures, onNodeDoubleClick, highlightedEntity }, ref)=>{
+const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignmentFeatures, entityCommunityMap, onNodeDoubleClick, onNodeClick, onCanvasClick, onStatsChange, highlightedEntity }, ref)=>{
     var _subgraph_paths;
     _s();
     const containerRef = (0, _react.useRef)(null);
@@ -1330,7 +4264,6 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
     const subgraphRef = (0, _react.useRef)(subgraph);
     subgraphRef.current = subgraph;
     const [loading, setLoading] = (0, _react.useState)(false);
-    const [selectedNode, setSelectedNode] = (0, _react.useState)(null);
     const [liveStats, setLiveStats] = (0, _react.useState)(null);
     const [visibleCategories, setVisibleCategories] = (0, _react.useState)(new Set(VALID_NODE_TYPES));
     const [contextMenu, setContextMenu] = (0, _react.useState)({
@@ -1342,9 +4275,52 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
         nodeType: ''
     });
     const [isFullscreen, setIsFullscreen] = (0, _react.useState)(false);
-    const [layoutMode, setLayoutMode] = (0, _react.useState)('force');
+    const [layoutMode, setLayoutMode] = (0, _react.useState)('concentric');
     const [pathOnly, setPathOnly] = (0, _react.useState)(false);
     const pathNodeIdsRef = (0, _react.useRef)(new Set());
+    const suppressNextCanvasClickRef = (0, _react.useRef)(false);
+    const [activeNodeFilters, setActiveNodeFilters] = (0, _react.useState)(new Set());
+    const [activeEdgeFilters, setActiveEdgeFilters] = (0, _react.useState)(new Set());
+    const [activeRiskFilters, setActiveRiskFilters] = (0, _react.useState)(new Set());
+    const applyGraphFilters = (0, _react.useCallback)(()=>{
+        const g = graphRef.current;
+        if (!g) return;
+        const hasNodeFilter = activeNodeFilters.size > 0;
+        const hasEdgeFilter = activeEdgeFilters.size > 0;
+        const hasRiskFilter = activeRiskFilters.size > 0;
+        const hasAnyFilter = hasNodeFilter || hasEdgeFilter || hasRiskFilter;
+        g.getNodes().forEach((n)=>{
+            const model = n.getModel();
+            const typeMatch = !hasNodeFilter || activeNodeFilters.has(model._type);
+            const riskMatch = !hasRiskFilter || model._riskLevel && activeRiskFilters.has(model._riskLevel);
+            g.setItemState(n, 'dimmed', hasAnyFilter && !(typeMatch && riskMatch));
+        });
+        g.getEdges().forEach((e)=>{
+            const model = e.getModel();
+            const relMatch = !hasEdgeFilter || activeEdgeFilters.has(model.relation);
+            g.setItemState(e, 'dimmed', hasEdgeFilter && !relMatch);
+        });
+    }, [
+        activeNodeFilters,
+        activeEdgeFilters,
+        activeRiskFilters
+    ]);
+    (0, _react.useEffect)(()=>{
+        applyGraphFilters();
+    }, [
+        applyGraphFilters
+    ]);
+    const clearAllFilters = ()=>{
+        setActiveNodeFilters(new Set());
+        setActiveEdgeFilters(new Set());
+        setActiveRiskFilters(new Set());
+        setVisibleCategories(new Set(VALID_NODE_TYPES));
+        const g = graphRef.current;
+        if (g) {
+            g.getNodes().forEach((n)=>g.showItem(n));
+            g.getEdges().forEach((e)=>g.showItem(e));
+        }
+    };
     const syncGraphStats = (0, _react.useCallback)(()=>{
         const g = graphRef.current;
         if (!g) return;
@@ -1352,23 +4328,31 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
         const gEdges = g.getEdges();
         const nodeCounts = {};
         const edgeCounts = {};
+        const riskLevelCounts = {};
         for (const n of gNodes){
             const model = n.getModel();
             const t = (model === null || model === void 0 ? void 0 : model._type) ?? '';
             if (VALID_NODE_TYPES.has(t)) nodeCounts[t] = (nodeCounts[t] ?? 0) + 1;
+            const rl = model === null || model === void 0 ? void 0 : model._riskLevel;
+            if (rl) riskLevelCounts[rl] = (riskLevelCounts[rl] ?? 0) + 1;
         }
         for (const e of gEdges){
             const model = e.getModel();
             const rel = (model === null || model === void 0 ? void 0 : model.relation) ?? 'UNKNOWN';
             edgeCounts[rel] = (edgeCounts[rel] ?? 0) + 1;
         }
-        setLiveStats({
+        const stats = {
             totalNodes: gNodes.length,
             totalEdges: gEdges.length,
             nodeCounts,
-            edgeCounts
-        });
-    }, []);
+            edgeCounts,
+            riskLevelCounts
+        };
+        setLiveStats(stats);
+        onStatsChange === null || onStatsChange === void 0 || onStatsChange(stats);
+    }, [
+        onStatsChange
+    ]);
     const applyHighlight = (0, _react.useCallback)((cat)=>{
         const g = graphRef.current;
         if (!g) return;
@@ -1413,12 +4397,8 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
             nN.forEach((n)=>{
                 const idStr = String(n.id);
                 if (!graph.findById(idStr)) {
-                    const v = NODE_VISUAL[n.type] || {
-                        color: '#94a3b8',
-                        size: 14,
-                        labelOffset: 5
-                    };
-                    let label = String(n.title || n.zh_name || n.name || n.id);
+                    const v = NODE_VISUAL[n.type] || NODE_DEFAULT_VISUAL;
+                    let label = String(n.title || n.label || n.zh_name || n.name || n.id);
                     if (label.length > 15) label = label.slice(0, 12) + '...';
                     try {
                         graph.addItem('node', {
@@ -1428,9 +4408,9 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                             _type: n.type,
                             size: v.size,
                             style: {
-                                fill: v.color,
-                                stroke: n.type === 'COMPANY' ? v.color : 'transparent',
-                                lineWidth: n.type === 'COMPANY' ? 2 : 0,
+                                fill: v.fill,
+                                stroke: v.stroke,
+                                lineWidth: 2,
                                 cursor: 'pointer'
                             },
                             labelCfg: {
@@ -1438,8 +4418,8 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                                 offset: v.labelOffset,
                                 style: {
                                     fill: '#1e293b',
-                                    fontSize: n.type === 'COMPANY' ? 12 : 10,
-                                    fontWeight: n.type === 'COMPANY' ? 600 : 500,
+                                    fontSize: 12,
+                                    fontWeight: 500,
                                     background: {
                                         fill: 'rgba(255,255,255,0.85)',
                                         padding: [
@@ -1513,7 +4493,7 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
     }, []);
     const handleFitView = (0, _react.useCallback)(()=>{
         var _graphRef_current;
-        (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.fitView(30);
+        (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.fitView(35);
     }, []);
     const handleToggleFullscreen = (0, _react.useCallback)(()=>{
         const container = containerRef.current;
@@ -1568,8 +4548,117 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                     ordering: 'degree'
                 });
                 break;
+            case 'concentric':
+                {
+                    const nodes = g.getNodes();
+                    const edges = g.getEdges();
+                    if (nodes.length === 0) break;
+                    const adj = new Map();
+                    nodes.forEach((n)=>adj.set(n.getID(), new Set()));
+                    edges.forEach((e)=>{
+                        var _adj_get, _adj_get1;
+                        const model = e.getModel();
+                        const src = String(model.source);
+                        const tgt = String(model.target);
+                        (_adj_get = adj.get(src)) === null || _adj_get === void 0 || _adj_get.add(tgt);
+                        (_adj_get1 = adj.get(tgt)) === null || _adj_get1 === void 0 || _adj_get1.add(src);
+                    });
+                    let subjectIds = new Set();
+                    let maxDeg = 0;
+                    nodes.forEach((n)=>{
+                        var _adj_get;
+                        const id = n.getID();
+                        const model = n.getModel();
+                        if (model._isSubject) subjectIds.add(id);
+                        const deg = ((_adj_get = adj.get(id)) === null || _adj_get === void 0 ? void 0 : _adj_get.size) || 0;
+                        if (deg > maxDeg) maxDeg = deg;
+                    });
+                    if (subjectIds.size === 0 && nodes.length > 0) nodes.forEach((n)=>{
+                        var _adj_get;
+                        const id = n.getID();
+                        if ((((_adj_get = adj.get(id)) === null || _adj_get === void 0 ? void 0 : _adj_get.size) || 0) === maxDeg) subjectIds.add(id);
+                    });
+                    const hop = new Map();
+                    const queue = [];
+                    for (const sid of subjectIds){
+                        hop.set(sid, 0);
+                        queue.push(sid);
+                    }
+                    while(queue.length > 0){
+                        const cur = queue.shift();
+                        const curHop = hop.get(cur) || 0;
+                        for (const nb of adj.get(cur) || [])if (!hop.has(nb)) {
+                            hop.set(nb, curHop + 1);
+                            queue.push(nb);
+                        }
+                    }
+                    const maxHop = hop.size > 0 ? Math.max(...hop.values()) : 0;
+                    nodes.forEach((n)=>{
+                        if (!hop.has(n.getID())) hop.set(n.getID(), maxHop + 1);
+                    });
+                    const nodeComm = new Map();
+                    nodes.forEach((n)=>{
+                        const model = n.getModel();
+                        const cids = model._communityIds;
+                        nodeComm.set(n.getID(), cids && cids.length > 0 ? cids[0] : 0);
+                    });
+                    const rings = new Map();
+                    rings.set(0, []);
+                    rings.set(1, []);
+                    rings.set(2, []);
+                    rings.set(3, []);
+                    nodes.forEach((n)=>{
+                        const id = n.getID();
+                        const h = Math.min(hop.get(id) || 0, 3);
+                        rings.get(h).push({
+                            id,
+                            x: 0,
+                            y: 0,
+                            comm: nodeComm.get(id) || 0
+                        });
+                    });
+                    const radii = [
+                        0,
+                        120,
+                        240,
+                        360
+                    ];
+                    const center = {
+                        x: 400,
+                        y: 350
+                    };
+                    for(let ring = 0; ring <= 3; ring++){
+                        const members = rings.get(ring) || [];
+                        if (members.length === 0) continue;
+                        members.sort((a, b)=>a.comm - b.comm);
+                        const r = radii[ring];
+                        members.forEach((m, i)=>{
+                            const angle = 2 * Math.PI * i / members.length - Math.PI / 2;
+                            m.x = center.x + r * Math.cos(angle);
+                            m.y = center.y + r * Math.sin(angle);
+                        });
+                        if (ring === 0) members.forEach((m)=>{
+                            m.x = center.x;
+                            m.y = center.y;
+                        });
+                    }
+                    const allPositions = new Map();
+                    for (const members of rings.values())for (const m of members)allPositions.set(m.id, {
+                        x: m.x,
+                        y: m.y
+                    });
+                    nodes.forEach((n)=>{
+                        const pos = allPositions.get(n.getID());
+                        if (pos) g.updateItem(n, {
+                            x: pos.x,
+                            y: pos.y
+                        });
+                    });
+                    g.fitView(35);
+                    break;
+                }
         }
-        setTimeout(()=>g.fitView(30), 400);
+        if (mode !== 'concentric') setTimeout(()=>g.fitView(35), 400);
     }, []);
     const applyPathOnlyFilter = (0, _react.useCallback)((showPathOnly)=>{
         const g = graphRef.current;
@@ -1591,7 +4680,7 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
             g.getNodes().forEach((n)=>g.showItem(n));
             g.getEdges().forEach((e)=>g.showItem(e));
         }
-        g.fitView(30);
+        g.fitView(35);
     }, []);
     const handleTogglePathOnly = (0, _react.useCallback)(()=>{
         setPathOnly((prev)=>{
@@ -1605,22 +4694,21 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
     const handleContextViewDetail = (0, _react.useCallback)(()=>{
         var _subgraphRef_current;
         const raw = (_subgraphRef_current = subgraphRef.current) === null || _subgraphRef_current === void 0 ? void 0 : _subgraphRef_current.nodes.find((n)=>String(n.id) === contextMenu.nodeId);
-        if (raw) setSelectedNode(raw);
+        if (raw) {
+            var _graphRef_current;
+            (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.translate(-240, 0, {
+                duration: 300,
+                easing: 'easeCubic'
+            });
+            onNodeClick === null || onNodeClick === void 0 || onNodeClick(raw);
+        }
         setContextMenu((prev)=>({
                 ...prev,
                 visible: false
             }));
     }, [
-        contextMenu.nodeId
-    ]);
-    const handleContextAddMonitor = (0, _react.useCallback)(()=>{
-        _antd.message.success(`Monitoring added for: ${contextMenu.nodeName}`);
-        setContextMenu((prev)=>({
-                ...prev,
-                visible: false
-            }));
-    }, [
-        contextMenu.nodeName
+        contextMenu.nodeId,
+        onNodeClick
     ]);
     const handleContextExpand = (0, _react.useCallback)(()=>{
         searchAndExpand(contextMenu.nodeId, contextMenu.nodeType);
@@ -1655,16 +4743,16 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
     (0, _react.useImperativeHandle)(ref, ()=>({
             refresh: (sg, _alignedFeatures, subjectIds, neighborIds)=>{
                 if (!graphRef.current) return;
-                const g6Data = buildG6Data(sg, subjectIds, neighborIds);
+                const g6Data = buildG6Data(sg, subjectIds, neighborIds, entityCommunityMap);
                 pathNodeIdsRef.current = g6Data.pathNodeIds || new Set();
                 graphRef.current.changeData(g6Data);
-                graphRef.current.fitView(30);
+                graphRef.current.fitView(35);
                 syncGraphStats();
                 if (pathOnly) applyPathOnlyFilter(true);
             },
             fitView: ()=>{
                 var _graphRef_current;
-                return (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 ? void 0 : _graphRef_current.fitView(30);
+                return (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 ? void 0 : _graphRef_current.fitView(35);
             },
             resetHighlight: ()=>{
                 if (!graphRef.current) return;
@@ -1678,13 +4766,19 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                 });
             },
             focusNode: (nodeId)=>{
-                var _subgraphRef_current;
                 if (!graphRef.current) return;
                 graphRef.current.focusItem(nodeId, true);
-                const raw = (_subgraphRef_current = subgraphRef.current) === null || _subgraphRef_current === void 0 ? void 0 : _subgraphRef_current.nodes.find((n)=>String(n.id) === nodeId);
-                if (raw) setSelectedNode(raw);
             },
             searchAndExpand,
+            toggleCategory,
+            applyHighlight,
+            translateCanvas: (dx, dy)=>{
+                var _graphRef_current;
+                (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.translate(dx, dy, {
+                    duration: 300,
+                    easing: 'easeCubic'
+                });
+            },
             dimNonFocused: (subjectIds, neighborIds)=>{
                 const g = graphRef.current;
                 if (!g) return;
@@ -1714,7 +4808,6 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                     edges: []
                 });
                 setLiveStats(null);
-                setSelectedNode(null);
             }
         }));
     (0, _react.useEffect)(()=>{
@@ -1729,19 +4822,14 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                     width: containerRef.current.clientWidth,
                     height: containerRef.current.clientHeight,
                     layout: {
-                        type: 'force',
-                        preventOverlap: true,
-                        nodeSize: 40,
-                        nodeSpacing: 40,
-                        linkDistance: 150,
-                        nodeStrength: -200
+                        type: 'preset'
                     },
                     defaultNode: {
                         type: 'circle',
                         size: 20
                     },
                     defaultEdge: {
-                        type: 'quadratic',
+                        type: 'line',
                         style: {
                             endArrow: true
                         }
@@ -1766,11 +4854,18 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                 });
                 graphRef.current = graph;
                 graph.render();
+                const initialSubgraph = subgraphRef.current;
+                if (initialSubgraph) {
+                    const g6Data = buildG6Data(initialSubgraph, undefined, undefined, entityCommunityMap);
+                    pathNodeIdsRef.current = g6Data.pathNodeIds || new Set();
+                    graph.changeData(g6Data);
+                    graph.fitView(35);
+                }
                 syncGraphStats();
                 const resizeObserver = new ResizeObserver(()=>{
                     if (containerRef.current && graphRef.current) {
                         graphRef.current.changeSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
-                        graphRef.current.fitView(30);
+                        graphRef.current.fitView(35);
                     }
                 });
                 resizeObserver.observe(containerRef.current);
@@ -1780,7 +4875,13 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                         var _e_item;
                         return String(n.id) === ((_e_item = e.item) === null || _e_item === void 0 ? void 0 : _e_item.getID());
                     });
-                    if (raw) setSelectedNode(raw);
+                    if (raw) {
+                        suppressNextCanvasClickRef.current = true;
+                        window.setTimeout(()=>{
+                            suppressNextCanvasClickRef.current = false;
+                        }, 120);
+                        onNodeClick === null || onNodeClick === void 0 || onNodeClick(raw);
+                    }
                 });
                 graph.on('node:dblclick', (e)=>{
                     var _e_item, _e_item1, _e_item2;
@@ -1789,6 +4890,40 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                     const nodeName = ((_e_item2 = e.item) === null || _e_item2 === void 0 ? void 0 : _e_item2.getModel().label) || nodeId;
                     onNodeDoubleClick === null || onNodeDoubleClick === void 0 || onNodeDoubleClick(nodeId, nodeName, nodeType);
                     searchAndExpand(nodeId, nodeType);
+                });
+                graph.on('node:mouseenter', (e)=>{
+                    var _e_item;
+                    const model = (_e_item = e.item) === null || _e_item === void 0 ? void 0 : _e_item.getModel();
+                    const nodeType = (model === null || model === void 0 ? void 0 : model._type) || '';
+                    const riskLevel = model === null || model === void 0 ? void 0 : model._riskLevel;
+                    const complianceScore = model === null || model === void 0 ? void 0 : model._complianceScore;
+                    const tooltipEl = document.getElementById('windeye-node-tooltip');
+                    if (tooltipEl) {
+                        const typeLabel = _graphStyles.NODE_TYPE_LABELS[nodeType] || nodeType;
+                        const typeColor = _graphStyles.NODE_TYPE_COLORS[nodeType] || '#8c8c8c';
+                        const rv = riskLevel ? _graphStyles.RISK_LEVEL_VISUAL[riskLevel] : null;
+                        tooltipEl.innerHTML = `
+                <div style="font-weight:600;font-size:13px;color:#1e293b;margin-bottom:4px">${(model === null || model === void 0 ? void 0 : model.label) || (model === null || model === void 0 ? void 0 : model.id) || ''}</div>
+                <span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${typeColor};background:${typeColor}15;border:1px solid ${typeColor}30">${typeLabel}</span>
+                ${rv ? `<span style="display:inline-block;margin-left:6px;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600;color:${rv.border};background:${rv.bg};border:1px solid ${rv.border}40">${rv.label}</span>` : ''}
+                ${complianceScore !== undefined && complianceScore !== null ? `<div style="margin-top:6px;font-size:11px;color:#64748b">合规指标总分：<b style="color:#1677ff">${Number(complianceScore).toFixed(1)}</b></div>` : ''}
+              `;
+                        tooltipEl.style.display = 'block';
+                    }
+                });
+                graph.on('node:mouseleave', ()=>{
+                    const tooltipEl = document.getElementById('windeye-node-tooltip');
+                    if (tooltipEl) tooltipEl.style.display = 'none';
+                });
+                graph.on('node:mousemove', (e)=>{
+                    const tooltipEl = document.getElementById('windeye-node-tooltip');
+                    if (tooltipEl && tooltipEl.style.display === 'block') {
+                        var _e_originalEvent, _e_originalEvent1;
+                        const x = (((_e_originalEvent = e.originalEvent) === null || _e_originalEvent === void 0 ? void 0 : _e_originalEvent.clientX) || e.clientX || 0) + 15;
+                        const y = (((_e_originalEvent1 = e.originalEvent) === null || _e_originalEvent1 === void 0 ? void 0 : _e_originalEvent1.clientY) || e.clientY || 0) + 15;
+                        tooltipEl.style.left = `${x}px`;
+                        tooltipEl.style.top = `${y}px`;
+                    }
                 });
                 graph.on('node:contextmenu', (e)=>{
                     var _e_originalEvent_preventDefault, _e_originalEvent, _e_item, _e_item1, _e_originalEvent1, _e_originalEvent2;
@@ -1807,17 +4942,26 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                     });
                 });
                 graph.on('canvas:click', ()=>{
+                    if (suppressNextCanvasClickRef.current) {
+                        suppressNextCanvasClickRef.current = false;
+                        return;
+                    }
                     setContextMenu((prev)=>prev.visible ? {
                             ...prev,
                             visible: false
                         } : prev);
-                    setSelectedNode(null);
+                    clearAllFilters();
+                    graph.translate(0, 0, {
+                        duration: 300,
+                        easing: 'easeCubic'
+                    });
+                    onCanvasClick === null || onCanvasClick === void 0 || onCanvasClick();
                 });
                 let pulseFrame = 0;
                 const pulseHighRiskNodes = ()=>{
                     if (!graph || graph.destroyed) return;
                     pulseFrame++;
-                    const opacity = 0.5 + 0.5 * Math.sin(pulseFrame * 0.08);
+                    const glowIntensity = 15 + 10 * Math.sin(pulseFrame * 0.06);
                     graph.getNodes().forEach((n)=>{
                         const model = n.getModel();
                         if (model._riskLevel === 'high') {
@@ -1826,7 +4970,7 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
                             if (container) {
                                 var _container_getChildByIndex;
                                 const circle = (_container_getChildByIndex = container.getChildByIndex) === null || _container_getChildByIndex === void 0 ? void 0 : _container_getChildByIndex.call(container, 0);
-                                if (circle && typeof circle.attr === 'function') circle.attr('opacity', opacity);
+                                if (circle && typeof circle.attr === 'function') circle.attr('shadowBlur', glowIntensity);
                             }
                         }
                     });
@@ -1867,226 +5011,84 @@ const EnhancedGraphPanel = _s((0, _react.forwardRef)(_c = _s(({ subgraph, alignm
     ]);
     return (0, _jsxdevruntime.jsxDEV)("div", {
         style: styles.root,
-        children: [
-            (0, _jsxdevruntime.jsxDEV)(_LegendPanel.default, {
-                stats: liveStats,
-                visibleCategories: visibleCategories,
-                onToggle: toggleCategory,
-                onHighlight: applyHighlight
-            }, void 0, false, {
-                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                lineNumber: 723,
-                columnNumber: 9
-            }, this),
-            (0, _jsxdevruntime.jsxDEV)("div", {
-                style: styles.graphArea,
-                children: [
-                    (0, _jsxdevruntime.jsxDEV)("div", {
-                        ref: containerRef,
-                        style: styles.graphCanvas
-                    }, void 0, false, {
-                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                        lineNumber: 730,
-                        columnNumber: 11
-                    }, this),
-                    liveStats && (liveStats.totalNodes > 0 || liveStats.totalEdges > 0) && (0, _jsxdevruntime.jsxDEV)("div", {
-                        style: styles.statsOverlay,
-                        children: [
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Statistic, {
-                                title: "节点总数",
-                                value: liveStats.totalNodes,
-                                valueStyle: {
-                                    fontSize: 20,
-                                    fontWeight: 700
-                                }
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                lineNumber: 735,
-                                columnNumber: 15
-                            }, this),
-                            (0, _jsxdevruntime.jsxDEV)("div", {
-                                style: styles.statsDivider
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                lineNumber: 736,
-                                columnNumber: 15
-                            }, this),
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Statistic, {
-                                title: "关系总数",
-                                value: liveStats.totalEdges,
-                                valueStyle: {
-                                    fontSize: 20,
-                                    fontWeight: 700
-                                }
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                lineNumber: 737,
-                                columnNumber: 15
-                            }, this),
-                            Object.keys(liveStats.nodeCounts || {}).length > 0 && (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
-                                children: [
-                                    (0, _jsxdevruntime.jsxDEV)("div", {
-                                        style: styles.statsDivider
-                                    }, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                        lineNumber: 740,
-                                        columnNumber: 19
-                                    }, this),
-                                    (0, _jsxdevruntime.jsxDEV)("div", {
-                                        style: {
-                                            display: 'flex',
-                                            gap: 4,
-                                            flexWrap: 'wrap',
-                                            alignItems: 'center'
-                                        },
-                                        children: Object.entries(liveStats.nodeCounts).slice(0, 4).map(([type, count])=>{
-                                            var _NODE_VISUAL_type;
-                                            return (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                color: ((_NODE_VISUAL_type = NODE_VISUAL[type]) === null || _NODE_VISUAL_type === void 0 ? void 0 : _NODE_VISUAL_type.color) || '#94a3b8',
-                                                style: {
-                                                    fontSize: 10,
-                                                    margin: 0,
-                                                    borderRadius: 4
-                                                },
-                                                children: [
-                                                    type,
-                                                    ": ",
-                                                    count
-                                                ]
-                                            }, type, true, {
-                                                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                                lineNumber: 743,
-                                                columnNumber: 23
-                                            }, this);
-                                        })
-                                    }, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                        lineNumber: 741,
-                                        columnNumber: 19
-                                    }, this)
-                                ]
-                            }, void 0, true)
-                        ]
-                    }, void 0, true, {
-                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                        lineNumber: 734,
-                        columnNumber: 13
-                    }, this),
-                    (0, _jsxdevruntime.jsxDEV)(_GraphToolbar.default, {
-                        onZoomIn: handleZoomIn,
-                        onZoomOut: handleZoomOut,
-                        onFitView: handleFitView,
-                        onToggleFullscreen: handleToggleFullscreen,
-                        isFullscreen: isFullscreen,
-                        onExportImage: handleExportImage,
-                        onChangeLayout: handleChangeLayout,
-                        layoutMode: layoutMode,
-                        onTogglePathOnly: handleTogglePathOnly,
-                        pathOnly: pathOnly,
-                        hasPaths: hasPaths
-                    }, void 0, false, {
-                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                        lineNumber: 753,
-                        columnNumber: 11
-                    }, this),
-                    selectedNode && (0, _jsxdevruntime.jsxDEV)("div", {
-                        style: styles.infoCard,
-                        children: [
-                            (0, _jsxdevruntime.jsxDEV)("button", {
-                                onClick: ()=>setSelectedNode(null),
-                                style: styles.closeBtn,
-                                children: "×"
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                lineNumber: 769,
-                                columnNumber: 15
-                            }, this),
-                            (0, _jsxdevruntime.jsxDEV)("div", {
-                                style: {
-                                    padding: 16
-                                },
-                                children: [
-                                    (0, _jsxdevruntime.jsxDEV)(Text, {
-                                        strong: true,
-                                        style: {
-                                            fontSize: 16,
-                                            display: 'block'
-                                        },
-                                        children: selectedNode.title || selectedNode.zh_name || selectedNode.name
-                                    }, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                        lineNumber: 773,
-                                        columnNumber: 17
-                                    }, this),
-                                    (0, _jsxdevruntime.jsxDEV)(Text, {
-                                        type: "secondary",
-                                        style: {
-                                            fontSize: 12
-                                        },
-                                        children: selectedNode.type
-                                    }, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                        lineNumber: 776,
-                                        columnNumber: 17
-                                    }, this),
-                                    (0, _jsxdevruntime.jsxDEV)("div", {
-                                        style: {
-                                            marginTop: 10,
-                                            fontSize: 13,
-                                            maxHeight: 200,
-                                            overflowY: 'auto'
-                                        },
-                                        children: selectedNode.overview
-                                    }, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                        lineNumber: 779,
-                                        columnNumber: 17
-                                    }, this)
-                                ]
-                            }, void 0, true, {
-                                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                                lineNumber: 772,
-                                columnNumber: 15
-                            }, this)
-                        ]
-                    }, void 0, true, {
-                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                        lineNumber: 768,
-                        columnNumber: 13
-                    }, this),
-                    (0, _jsxdevruntime.jsxDEV)(_NodeContextMenu.default, {
-                        visible: contextMenu.visible,
-                        x: contextMenu.x,
-                        y: contextMenu.y,
-                        nodeId: contextMenu.nodeId,
-                        nodeName: contextMenu.nodeName,
-                        nodeType: contextMenu.nodeType,
-                        onClose: ()=>setContextMenu((prev)=>({
-                                    ...prev,
-                                    visible: false
-                                })),
-                        onViewDetail: handleContextViewDetail,
-                        onAddMonitor: handleContextAddMonitor,
-                        onExpand: handleContextExpand,
-                        onGenerateReport: handleContextGenerateReport
-                    }, void 0, false, {
-                        fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                        lineNumber: 786,
-                        columnNumber: 11
-                    }, this)
-                ]
-            }, void 0, true, {
-                fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-                lineNumber: 729,
-                columnNumber: 9
-            }, this)
-        ]
-    }, void 0, true, {
+        children: (0, _jsxdevruntime.jsxDEV)("div", {
+            style: styles.graphArea,
+            children: [
+                (0, _jsxdevruntime.jsxDEV)("div", {
+                    ref: containerRef,
+                    style: styles.graphCanvas
+                }, void 0, false, {
+                    fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
+                    lineNumber: 1197,
+                    columnNumber: 11
+                }, this),
+                (0, _jsxdevruntime.jsxDEV)("div", {
+                    id: "windeye-node-tooltip",
+                    style: {
+                        display: 'none',
+                        position: 'fixed',
+                        zIndex: 1000,
+                        pointerEvents: 'none',
+                        background: '#fff',
+                        borderRadius: 8,
+                        padding: '8px 12px',
+                        boxShadow: '0 4px 16px rgba(15, 23, 42, 0.12)',
+                        border: '1px solid #e2e8f0',
+                        maxWidth: 220
+                    }
+                }, void 0, false, {
+                    fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
+                    lineNumber: 1200,
+                    columnNumber: 11
+                }, this),
+                (0, _jsxdevruntime.jsxDEV)(_GraphToolbar.default, {
+                    onZoomIn: handleZoomIn,
+                    onZoomOut: handleZoomOut,
+                    onFitView: handleFitView,
+                    onToggleFullscreen: handleToggleFullscreen,
+                    isFullscreen: isFullscreen,
+                    onExportImage: handleExportImage,
+                    onChangeLayout: handleChangeLayout,
+                    layoutMode: layoutMode,
+                    onTogglePathOnly: handleTogglePathOnly,
+                    pathOnly: pathOnly,
+                    hasPaths: hasPaths
+                }, void 0, false, {
+                    fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
+                    lineNumber: 1216,
+                    columnNumber: 11
+                }, this),
+                (0, _jsxdevruntime.jsxDEV)(_NodeContextMenu.default, {
+                    visible: contextMenu.visible,
+                    x: contextMenu.x,
+                    y: contextMenu.y,
+                    nodeId: contextMenu.nodeId,
+                    nodeName: contextMenu.nodeName,
+                    nodeType: contextMenu.nodeType,
+                    onClose: ()=>setContextMenu((prev)=>({
+                                ...prev,
+                                visible: false
+                            })),
+                    onViewDetail: handleContextViewDetail,
+                    onExpand: handleContextExpand,
+                    onGenerateReport: handleContextGenerateReport
+                }, void 0, false, {
+                    fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
+                    lineNumber: 1230,
+                    columnNumber: 11
+                }, this)
+            ]
+        }, void 0, true, {
+            fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
+            lineNumber: 1196,
+            columnNumber: 9
+        }, this)
+    }, void 0, false, {
         fileName: "src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx",
-        lineNumber: 722,
+        lineNumber: 1195,
         columnNumber: 7
     }, this);
-}, "l92KRiOsyn5hHFR/PEy/K7paVng=")), "l92KRiOsyn5hHFR/PEy/K7paVng=");
+}, "t5abTC/Rxy6C6t3fXTRl88tf9Z0=")), "t5abTC/Rxy6C6t3fXTRl88tf9Z0=");
 _c1 = EnhancedGraphPanel;
 const styles = {
     root: {
@@ -2103,49 +5105,6 @@ const styles = {
     graphCanvas: {
         width: '100%',
         height: '100%'
-    },
-    statsOverlay: {
-        position: 'absolute',
-        top: 12,
-        left: 12,
-        zIndex: 10,
-        background: 'rgba(255, 255, 255, 0.95)',
-        borderRadius: 10,
-        padding: '8px 14px',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-        border: '1px solid #e2e8f0',
-        display: 'flex',
-        gap: 12,
-        alignItems: 'center',
-        pointerEvents: 'none',
-        backdropFilter: 'blur(8px)'
-    },
-    statsDivider: {
-        width: 1,
-        height: 28,
-        background: '#e2e8f0',
-        flexShrink: 0
-    },
-    infoCard: {
-        position: 'absolute',
-        top: 16,
-        right: 60,
-        width: 260,
-        background: '#fff',
-        borderRadius: 12,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-        zIndex: 10,
-        border: '1px solid #e2e8f0'
-    },
-    closeBtn: {
-        position: 'absolute',
-        top: 8,
-        right: 8,
-        background: 'none',
-        border: 'none',
-        fontSize: 18,
-        cursor: 'pointer',
-        color: '#94a3b8'
     }
 };
 var _default = EnhancedGraphPanel;
@@ -2195,11 +5154,10 @@ __mako_require__.e(exports, {
         return _default;
     }
 });
-var _interop_require_default = __mako_require__("@swc/helpers/_/_interop_require_default");
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
-var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
 var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
-var _react = _interop_require_default._(__mako_require__("node_modules/react/index.js"));
+var _react = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
 var _antd = __mako_require__("node_modules/antd/es/index.js");
 var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
 var _constants = __mako_require__("src/pages/KnowledgeQA/styles/constants.ts");
@@ -2211,6 +5169,7 @@ self.$RefreshReg$ = (type, id)=>{
     _reactrefresh.register(type, module.id + id);
 };
 self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
+var _s = $RefreshSig$();
 const { Text } = _antd.Typography;
 const formatTime = (ts)=>{
     const d = new Date(ts);
@@ -2250,9 +5209,11 @@ const extractEntities = (text, recommendations)=>{
     return entities;
 };
 const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlightedEntity })=>{
+    _s();
     const isUser = message.role === 'user';
     const isSystem = message.role === 'system';
-    if (isSystem) return (0, _jsxdevruntime.jsxDEV)("div", {
+    const [showReasoning, setShowReasoning] = (0, _react.useState)(false);
+    if (isSystem) return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
         style: {
             display: 'flex',
             alignItems: 'flex-start',
@@ -2260,7 +5221,7 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
             marginBottom: 12
         },
         children: [
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     width: 28,
                     height: 28,
@@ -2271,22 +5232,22 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                     alignItems: 'center',
                     justifyContent: 'center'
                 },
-                children: (0, _jsxdevruntime.jsxDEV)(_icons.InfoCircleOutlined, {
+                children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.InfoCircleOutlined, {
                     style: {
                         color: _constants.DESIGN_TOKENS.COLOR_ERROR,
                         fontSize: 14
                     }
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                    lineNumber: 97,
+                    lineNumber: 98,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                lineNumber: 85,
+                lineNumber: 86,
                 columnNumber: 9
             }, this),
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     background: _constants.DESIGN_TOKENS.ERROR_LIGHT,
                     border: `1px solid ${_constants.DESIGN_TOKENS.ERROR_BORDER}`,
@@ -2294,7 +5255,7 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                     padding: '10px 14px',
                     maxWidth: '80%'
                 },
-                children: (0, _jsxdevruntime.jsxDEV)(Text, {
+                children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
                     style: {
                         color: _constants.DESIGN_TOKENS.COLOR_ERROR,
                         fontSize: 13,
@@ -2303,29 +5264,29 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                     children: message.content
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                    lineNumber: 108,
+                    lineNumber: 109,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                lineNumber: 99,
+                lineNumber: 100,
                 columnNumber: 9
             }, this)
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-        lineNumber: 84,
+        lineNumber: 85,
         columnNumber: 7
     }, this);
     const renderContent = ()=>{
         var _message_data_output, _message_data;
         const recommendations = ((_message_data = message.data) === null || _message_data === void 0 ? void 0 : (_message_data_output = _message_data.output) === null || _message_data_output === void 0 ? void 0 : _message_data_output.recommendations) || [];
         const entities = extractEntities(message.content, recommendations);
-        if (entities.length === 0) return (0, _jsxdevruntime.jsxDEV)("span", {
+        if (entities.length === 0) return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
             children: message.content
         }, void 0, false, {
             fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-            lineNumber: 121,
+            lineNumber: 122,
             columnNumber: 14
         }, this);
         const sortedEntities = [
@@ -2334,15 +5295,15 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
         const parts = [];
         let lastIndex = 0;
         sortedEntities.forEach((entity, idx)=>{
-            if (entity.start > lastIndex) parts.push((0, _jsxdevruntime.jsxDEV)("span", {
+            if (entity.start > lastIndex) parts.push(/*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                 children: message.content.slice(lastIndex, entity.start)
             }, `text-${idx}`, false, {
                 fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                lineNumber: 132,
+                lineNumber: 133,
                 columnNumber: 11
             }, this));
             const isHighlighted = highlightedEntity === entity.id;
-            parts.push((0, _jsxdevruntime.jsxDEV)("span", {
+            parts.push(/*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                 "data-entity-id": entity.id,
                 "data-entity-type": entity.type,
                 onMouseEnter: ()=>onEntityHover === null || onEntityHover === void 0 ? void 0 : onEntityHover(entity.id),
@@ -2371,21 +5332,21 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                 children: message.content.slice(entity.start, entity.end)
             }, `entity-${idx}`, false, {
                 fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                lineNumber: 138,
+                lineNumber: 139,
                 columnNumber: 9
             }, this));
             lastIndex = entity.end;
         });
-        if (lastIndex < message.content.length) parts.push((0, _jsxdevruntime.jsxDEV)("span", {
+        if (lastIndex < message.content.length) parts.push(/*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
             children: message.content.slice(lastIndex)
         }, "text-end", false, {
             fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-            lineNumber: 170,
+            lineNumber: 171,
             columnNumber: 18
         }, this));
         return parts;
     };
-    return (0, _jsxdevruntime.jsxDEV)("div", {
+    return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
         style: {
             display: 'flex',
             alignItems: 'flex-start',
@@ -2394,7 +5355,7 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
             flexDirection: isUser ? 'row-reverse' : 'row'
         },
         children: [
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     width: 32,
                     height: 32,
@@ -2409,21 +5370,21 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                     color: '#ffffff',
                     boxShadow: isUser ? '0 4px 12px rgba(40, 85, 209, 0.35)' : '0 4px 12px rgba(16, 185, 129, 0.35)'
                 },
-                children: isUser ? (0, _jsxdevruntime.jsxDEV)(_icons.UserOutlined, {}, void 0, false, {
+                children: isUser ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.UserOutlined, {}, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                    lineNumber: 206,
+                    lineNumber: 207,
                     columnNumber: 19
-                }, this) : (0, _jsxdevruntime.jsxDEV)(_icons.RobotOutlined, {}, void 0, false, {
+                }, this) : /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.RobotOutlined, {}, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                    lineNumber: 206,
+                    lineNumber: 207,
                     columnNumber: 38
                 }, this)
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                lineNumber: 186,
+                lineNumber: 187,
                 columnNumber: 7
             }, this),
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     display: 'flex',
                     flexDirection: 'column',
@@ -2432,7 +5393,7 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                     alignItems: isUser ? 'flex-end' : 'flex-start'
                 },
                 children: [
-                    (0, _jsxdevruntime.jsxDEV)("div", {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: {
                             borderRadius: isUser ? '18px 18px 6px 18px' : '18px 18px 18px 6px',
                             padding: '12px 16px',
@@ -2448,10 +5409,94 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                         children: renderContent()
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                        lineNumber: 218,
+                        lineNumber: 219,
                         columnNumber: 9
                     }, this),
-                    (0, _jsxdevruntime.jsxDEV)(Text, {
+                    !isUser && message.reasoningLog && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: {
+                            width: '100%',
+                            marginTop: 4
+                        },
+                        children: [
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                                onClick: ()=>setShowReasoning(!showReasoning),
+                                style: {
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    cursor: 'pointer',
+                                    padding: '4px 10px',
+                                    borderRadius: 6,
+                                    background: 'rgba(250, 140, 22, 0.08)',
+                                    border: '1px solid rgba(250, 140, 22, 0.2)',
+                                    fontSize: 12,
+                                    color: '#d46b08',
+                                    userSelect: 'none',
+                                    transition: 'all 0.2s'
+                                },
+                                children: [
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.CaretRightOutlined, {
+                                        style: {
+                                            fontSize: 10,
+                                            transition: 'transform 0.2s',
+                                            transform: showReasoning ? 'rotate(90deg)' : 'rotate(0deg)'
+                                        }
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
+                                        lineNumber: 260,
+                                        columnNumber: 15
+                                    }, this),
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.BugOutlined, {
+                                        style: {
+                                            fontSize: 12
+                                        }
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
+                                        lineNumber: 267,
+                                        columnNumber: 15
+                                    }, this),
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                                        children: "智能体推理日志"
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
+                                        lineNumber: 268,
+                                        columnNumber: 15
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
+                                lineNumber: 243,
+                                columnNumber: 13
+                            }, this),
+                            showReasoning && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    marginTop: 6,
+                                    padding: '12px 14px',
+                                    borderRadius: 8,
+                                    background: 'rgba(15, 23, 42, 0.92)',
+                                    border: '1px solid rgba(250, 140, 22, 0.25)',
+                                    fontSize: 12,
+                                    lineHeight: 1.7,
+                                    color: '#e2e8f0',
+                                    fontFamily: "'SF Mono', 'Cascadia Code', 'Consolas', monospace",
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    maxHeight: 500,
+                                    overflowY: 'auto'
+                                },
+                                children: message.reasoningLog
+                            }, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
+                                lineNumber: 271,
+                                columnNumber: 15
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
+                        lineNumber: 242,
+                        columnNumber: 11
+                    }, this),
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
                         style: {
                             color: _constants.DESIGN_TOKENS.TEXT_MUTED,
                             fontSize: 11,
@@ -2460,22 +5505,23 @@ const EntityMessageBubble = ({ message, onEntityHover, onEntityClick, highlighte
                         children: formatTime(message.timestamp)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                        lineNumber: 239,
+                        lineNumber: 294,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-                lineNumber: 209,
+                lineNumber: 210,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/components/EntityMessageBubble.tsx",
-        lineNumber: 177,
+        lineNumber: 178,
         columnNumber: 5
     }, this);
 };
+_s(EntityMessageBubble, "7RXySMueAP6bGHBKAlUHC9UdJrE=");
 _c = EntityMessageBubble;
 var _default = EntityMessageBubble;
 var _c;
@@ -2831,6 +5877,32 @@ const GraphToolbar = ({ onZoomIn, onZoomOut, onFitView, onToggleFullscreen, isFu
                         fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
                         lineNumber: 116,
                         columnNumber: 9
+                    }, this),
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
+                        title: `Concentric Layout${layoutMode === 'concentric' ? ' (active)' : ''}`,
+                        placement: "left",
+                        children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                            type: layoutMode === 'concentric' ? 'primary' : 'text',
+                            size: "small",
+                            icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.FilterOutlined, {}, void 0, false, {
+                                fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
+                                lineNumber: 129,
+                                columnNumber: 19
+                            }, void 0),
+                            onClick: ()=>onChangeLayout('concentric'),
+                            style: {
+                                border: 'none',
+                                boxShadow: 'none'
+                            }
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
+                            lineNumber: 126,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
+                        lineNumber: 125,
+                        columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
@@ -2857,7 +5929,7 @@ const GraphToolbar = ({ onZoomIn, onZoomOut, onFitView, onToggleFullscreen, isFu
                         size: "small",
                         icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.FilterOutlined, {}, void 0, false, {
                             fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
-                            lineNumber: 134,
+                            lineNumber: 143,
                             columnNumber: 21
                         }, void 0),
                         onClick: onTogglePathOnly,
@@ -2867,17 +5939,17 @@ const GraphToolbar = ({ onZoomIn, onZoomOut, onFitView, onToggleFullscreen, isFu
                         }
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
-                        lineNumber: 131,
+                        lineNumber: 140,
                         columnNumber: 13
                     }, this)
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
-                    lineNumber: 130,
+                    lineNumber: 139,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/GraphToolbar.tsx",
-                lineNumber: 129,
+                lineNumber: 138,
                 columnNumber: 9
             }, this)
         ]
@@ -2930,6 +6002,7 @@ var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_requir
 var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
 var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
 var _react = /*#__PURE__*/ _interop_require_default._(__mako_require__("node_modules/react/index.js"));
+var _graphStyles = __mako_require__("src/pages/KnowledgeQA/components/graphStyles.ts");
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -2939,38 +6012,6 @@ self.$RefreshReg$ = (type, id)=>{
 };
 self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
 const fmt = (n)=>n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-const NODE_COLORS = {
-    COMPANY: '#FFC101',
-    PERSON: '#1890FF',
-    EVENT: '#FF6B6B',
-    SUB_EVENT: '#FF9999',
-    TIME: '#FF8C00',
-    RiskFeature: '#4CAF50',
-    RiskFactor: '#9C27B0',
-    Action: '#45B7D1',
-    Regulation: '#FFC101',
-    Law: '#1890FF'
-};
-const NODE_LABELS = {
-    COMPANY: 'Company',
-    PERSON: 'Person',
-    EVENT: 'Event',
-    SUB_EVENT: 'Sub Event',
-    TIME: 'Time',
-    RiskFeature: 'Risk Feature',
-    RiskFactor: 'Risk Factor',
-    Action: 'Action',
-    Regulation: 'Regulation',
-    Law: 'Law'
-};
-const REL_LABELS = {
-    TRIGGERS: 'Triggers',
-    REFLECTS: 'Reflects',
-    COMPLIES_WITH: 'Complies With',
-    MENTION: 'Mention',
-    CAUSE: 'Cause',
-    BELONG: 'Belong'
-};
 const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
     const isEdgeHidden = (rel)=>!visibleCategories.has(rel);
     if (!stats) return null;
@@ -2987,10 +6028,10 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
                         children: [
                             /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                 style: styles.rowLabel,
-                                children: "Nodes"
+                                children: "节点"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                lineNumber: 72,
+                                lineNumber: 39,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
@@ -3002,28 +6043,28 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                lineNumber: 73,
+                                lineNumber: 40,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                        lineNumber: 71,
+                        lineNumber: 38,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: styles.divider
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                        lineNumber: 75,
+                        lineNumber: 42,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: styles.chips,
-                        children: Object.keys(NODE_LABELS).map((type)=>{
+                        children: Object.keys(_graphStyles.NODE_TYPE_LABELS).map((type)=>{
                             const count = stats.nodeCounts[type] ?? 0;
                             if (count === 0) return null;
-                            const color = NODE_COLORS[type];
+                            const color = _graphStyles.NODE_TYPE_COLORS[type] || '#8c8c8c';
                             const hidden = !visibleCategories.has(type);
                             return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                 onMouseEnter: ()=>onHighlight(type),
@@ -3044,37 +6085,37 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
                                         }
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                        lineNumber: 95,
+                                        lineNumber: 62,
                                         columnNumber: 17
                                     }, this),
                                     /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                         style: styles.chipText,
                                         children: [
-                                            NODE_LABELS[type],
+                                            _graphStyles.NODE_TYPE_LABELS[type],
                                             " ",
                                             fmt(count)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                        lineNumber: 98,
+                                        lineNumber: 65,
                                         columnNumber: 17
                                     }, this)
                                 ]
                             }, type, true, {
                                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                lineNumber: 83,
+                                lineNumber: 50,
                                 columnNumber: 15
                             }, this);
                         })
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                        lineNumber: 76,
+                        lineNumber: 43,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                lineNumber: 70,
+                lineNumber: 37,
                 columnNumber: 7
             }, this),
             edgeCountTotal > 0 && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
@@ -3088,10 +6129,10 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
                         children: [
                             /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                 style: styles.rowLabel,
-                                children: "Relations"
+                                children: "关系"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                lineNumber: 110,
+                                lineNumber: 77,
                                 columnNumber: 13
                             }, this),
                             /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
@@ -3103,27 +6144,28 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                lineNumber: 111,
+                                lineNumber: 78,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                        lineNumber: 109,
+                        lineNumber: 76,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: styles.divider
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                        lineNumber: 113,
+                        lineNumber: 80,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: styles.chips,
                         children: Object.entries(stats.edgeCounts).map(([rel, count])=>{
                             if (count === 0 || rel === 'UNKNOWN') return null;
-                            const label = REL_LABELS[rel] || rel;
+                            const label = _graphStyles.RELATION_LABELS[rel] || rel;
+                            const color = _graphStyles.EDGE_COLORS[rel] || '#8c8c8c';
                             const hidden = isEdgeHidden(rel);
                             return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                 onMouseEnter: ()=>onHighlight(rel),
@@ -3131,37 +6173,132 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
                                 onClick: ()=>onToggle(rel),
                                 style: {
                                     ...styles.edgeChip,
-                                    borderColor: hidden ? '#e2e8f0' : '#cbd5e1',
-                                    color: hidden ? '#94a3b8' : '#475569',
-                                    background: hidden ? '#f8fafc' : '#ffffff'
+                                    background: hidden ? `${color}08` : `${color}12`,
+                                    borderColor: hidden ? `${color}15` : `${color}30`,
+                                    color: hidden ? `${color}60` : color
                                 },
-                                children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
-                                    style: styles.chipText,
-                                    children: [
-                                        label,
-                                        " ",
-                                        fmt(count)
-                                    ]
-                                }, void 0, true, {
-                                    fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                    lineNumber: 132,
-                                    columnNumber: 19
-                                }, this)
-                            }, rel, false, {
+                                children: [
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                                        style: {
+                                            ...styles.chipDot,
+                                            background: color,
+                                            opacity: hidden ? 0.3 : 1
+                                        }
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                                        lineNumber: 100,
+                                        columnNumber: 19
+                                    }, this),
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                                        style: styles.chipText,
+                                        children: [
+                                            label,
+                                            " ",
+                                            fmt(count)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                                        lineNumber: 103,
+                                        columnNumber: 19
+                                    }, this)
+                                ]
+                            }, rel, true, {
                                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                                lineNumber: 120,
+                                lineNumber: 88,
                                 columnNumber: 17
                             }, this);
                         })
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                        lineNumber: 114,
+                        lineNumber: 81,
                         columnNumber: 11
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                lineNumber: 108,
+                lineNumber: 75,
+                columnNumber: 9
+            }, this),
+            stats.riskLevelCounts && Object.keys(stats.riskLevelCounts).length > 0 && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                style: {
+                    ...styles.row,
+                    marginTop: 6
+                },
+                children: [
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: styles.labelGroup,
+                        children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                            style: styles.rowLabel,
+                            children: "风险"
+                        }, void 0, false, {
+                            fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                            lineNumber: 117,
+                            columnNumber: 13
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                        lineNumber: 116,
+                        columnNumber: 11
+                    }, this),
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: styles.divider
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                        lineNumber: 119,
+                        columnNumber: 11
+                    }, this),
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                        style: styles.chips,
+                        children: Object.entries(stats.riskLevelCounts).map(([level, count])=>{
+                            const rv = _graphStyles.RISK_LEVEL_VISUAL[level];
+                            if (!rv) return null;
+                            return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    ...styles.nodeChip,
+                                    background: `${rv.border}12`,
+                                    border: `1px solid ${rv.border}30`,
+                                    color: rv.border,
+                                    cursor: 'default'
+                                },
+                                children: [
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                                        style: {
+                                            ...styles.chipDot,
+                                            background: rv.border
+                                        }
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                                        lineNumber: 135,
+                                        columnNumber: 19
+                                    }, this),
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                                        style: styles.chipText,
+                                        children: [
+                                            rv.label,
+                                            " ",
+                                            fmt(count)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                                        lineNumber: 138,
+                                        columnNumber: 19
+                                    }, this)
+                                ]
+                            }, level, true, {
+                                fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                                lineNumber: 125,
+                                columnNumber: 17
+                            }, this);
+                        })
+                    }, void 0, false, {
+                        fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                        lineNumber: 120,
+                        columnNumber: 11
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
+                lineNumber: 115,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("style", {
@@ -3171,13 +6308,13 @@ const LegendPanel = ({ stats, visibleCategories, onToggle, onHighlight })=>{
       `
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-                lineNumber: 142,
+                lineNumber: 148,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/components/LegendPanel.tsx",
-        lineNumber: 69,
+        lineNumber: 36,
         columnNumber: 5
     }, this);
 };
@@ -3300,9 +6437,9 @@ __mako_require__.d(exports, "default", {
     }
 });
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
-var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
 var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
-var _react = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
+var _react = _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
 var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
 var prevRefreshReg;
 var prevRefreshSig;
@@ -3316,51 +6453,42 @@ var _s = $RefreshSig$();
 const menuItems = [
     {
         key: 'detail',
-        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.EyeOutlined, {}, void 0, false, {
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.EyeOutlined, {}, void 0, false, {
             fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-            lineNumber: 25,
+            lineNumber: 23,
             columnNumber: 26
         }, this),
         label: 'View Detail'
     },
     {
         key: 'expand',
-        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.ApartmentOutlined, {}, void 0, false, {
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.ApartmentOutlined, {}, void 0, false, {
             fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-            lineNumber: 26,
+            lineNumber: 24,
             columnNumber: 26
         }, this),
         label: 'Expand Connections'
     },
     {
-        key: 'monitor',
-        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.PlusOutlined, {}, void 0, false, {
-            fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-            lineNumber: 27,
-            columnNumber: 27
-        }, this),
-        label: 'Add to Watchlist'
-    },
-    {
         key: 'report',
-        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {}, void 0, false, {
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {}, void 0, false, {
             fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-            lineNumber: 28,
+            lineNumber: 25,
             columnNumber: 26
         }, this),
         label: 'Generate Risk Report'
     },
     {
         key: 'copy',
-        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.CopyOutlined, {}, void 0, false, {
+        icon: (0, _jsxdevruntime.jsxDEV)(_icons.CopyOutlined, {}, void 0, false, {
             fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-            lineNumber: 29,
+            lineNumber: 26,
             columnNumber: 24
         }, this),
         label: 'Copy Node Name'
     }
 ];
-const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, onViewDetail, onAddMonitor, onExpand, onGenerateReport })=>{
+const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, onViewDetail, onExpand, onGenerateReport })=>{
     _s();
     const menuRef = (0, _react.useRef)(null);
     (0, _react.useEffect)(()=>{
@@ -3394,9 +6522,6 @@ const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, o
             case 'expand':
                 onExpand();
                 break;
-            case 'monitor':
-                onAddMonitor();
-                break;
             case 'report':
                 onGenerateReport();
                 break;
@@ -3413,10 +6538,9 @@ const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, o
         }
         onClose();
     };
-    // Adjust position to stay within viewport
     const adjustedX = Math.min(x, window.innerWidth - 200);
     const adjustedY = Math.min(y, window.innerHeight - (menuItems.length * 36 + 16));
-    return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+    return (0, _jsxdevruntime.jsxDEV)("div", {
         ref: menuRef,
         style: {
             position: 'fixed',
@@ -3432,7 +6556,7 @@ const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, o
             backdropFilter: 'blur(10px)'
         },
         children: [
-            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+            (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     padding: '5px 14px 7px',
                     borderBottom: '1px solid #f1f5f9',
@@ -3445,10 +6569,10 @@ const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, o
                 children: nodeType
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-                lineNumber: 110,
+                lineNumber: 105,
                 columnNumber: 7
             }, this),
-            menuItems.map((item)=>/*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+            menuItems.map((item)=>(0, _jsxdevruntime.jsxDEV)("div", {
                     onClick: ()=>handleAction(item.key),
                     style: {
                         display: 'flex',
@@ -3467,7 +6591,7 @@ const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, o
                         e.currentTarget.style.background = 'transparent';
                     },
                     children: [
-                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                        (0, _jsxdevruntime.jsxDEV)("span", {
                             style: {
                                 width: 16,
                                 textAlign: 'center',
@@ -3477,26 +6601,26 @@ const NodeContextMenu = ({ visible, x, y, nodeId, nodeName, nodeType, onClose, o
                             children: item.icon
                         }, void 0, false, {
                             fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-                            lineNumber: 144,
+                            lineNumber: 139,
                             columnNumber: 11
                         }, this),
-                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
+                        (0, _jsxdevruntime.jsxDEV)("span", {
                             children: item.label
                         }, void 0, false, {
                             fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-                            lineNumber: 147,
+                            lineNumber: 142,
                             columnNumber: 11
                         }, this)
                     ]
                 }, item.key, true, {
                     fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-                    lineNumber: 124,
+                    lineNumber: 119,
                     columnNumber: 9
                 }, this))
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/components/NodeContextMenu.tsx",
-        lineNumber: 94,
+        lineNumber: 89,
         columnNumber: 5
     }, this);
 };
@@ -4163,7 +7287,7 @@ var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
 var _antd = __mako_require__("node_modules/antd/es/index.js");
 var _react = _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
 var _reactmarkdown = _interop_require_default._(__mako_require__("node_modules/react-markdown/index.js"));
-var _EventBarChart = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/charts/EventBarChart.tsx"));
+var _graphStyles = __mako_require__("src/pages/KnowledgeQA/components/graphStyles.ts");
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -4177,17 +7301,14 @@ const { Title, Text, Paragraph } = _antd.Typography;
 const RISK_LEVEL_COLORS = {
     high: '#f5222d',
     medium: '#fa8c16',
-    low: '#52c41a'
-};
-const RISK_LEVEL_BG = {
-    high: 'rgba(245, 34, 45, 0.1)',
-    medium: 'rgba(250, 140, 22, 0.1)',
-    low: 'rgba(82, 196, 26, 0.1)'
+    low: '#52c41a',
+    insufficient_evidence: '#94a3b8'
 };
 const RISK_LEVEL_LABELS = {
     high: '高风险',
     medium: '中风险',
-    low: '低风险'
+    low: '低风险',
+    insufficient_evidence: '证据不足'
 };
 const URGENCY_TAGS = {
     urgent: {
@@ -4203,30 +7324,51 @@ const URGENCY_TAGS = {
         label: '低'
     }
 };
+const COMMUNITY_PALETTE = [
+    '#2563eb',
+    '#7c3aed',
+    '#16a34a',
+    '#ea580c',
+    '#dc2626',
+    '#0891b2'
+];
 const STAGE_LABELS = {
     planning: '任务规划',
     retrieving: '图谱检索',
     entity_stats: '实体统计',
     community: '群体发现',
-    analyzing: '风险分析',
+    analyzing: '协同治理',
     compliance: '合规匹配',
     reporting: '报告生成'
 };
-function computeRiskScore(riskPaths) {
-    if (!riskPaths || riskPaths.length === 0) return 0;
-    const weights = {
-        high: 3,
-        medium: 2,
-        low: 1
+function inferClientEntityType(name) {
+    if (!name) return 'COMPANY';
+    if (/公司|集团|有限|股份|实业|科技|投资|控股|银行|基金|证券|保险|信托|租赁|保理|资本|产业/.test(name)) return 'COMPANY';
+    if (/律师|法官|董事长|总经理|法定代表人|股东|监事|董事|经理|主任|行长|总裁/.test(name)) return 'PERSON';
+    if (/^[一-鿿]{2,4}$/.test(name) && !/公司|事件|风险|法|条例|规定|集团|有限|银行/.test(name)) return 'PERSON';
+    if (/事件|事故|案件|诉讼|处罚|仲裁|纠纷|争议|违约|违规|违法|资金占用|冻结|判决|裁定/.test(name)) return 'EVENT';
+    if (/风险|因子|指标|预警|异常|波动/.test(name)) return 'RiskFactor';
+    if (/法$|条例$|办法$|规定$|细则$/.test(name)) return 'Regulation';
+    return 'COMPANY';
+}
+function getNodeDisplayName(node) {
+    const props = (node === null || node === void 0 ? void 0 : node.properties) || {};
+    return String((node === null || node === void 0 ? void 0 : node.name) || (node === null || node === void 0 ? void 0 : node.label) || props.name || props.title || props.COMPANY_NM || props.PERSON_NM || props.SECURITY_NM || (node === null || node === void 0 ? void 0 : node.id) || '');
+}
+function getNodeDisplayType(node) {
+    var _node_labels, _node_properties;
+    return String((node === null || node === void 0 ? void 0 : node.type) || (node === null || node === void 0 ? void 0 : node.label) || (node === null || node === void 0 ? void 0 : (_node_labels = node.labels) === null || _node_labels === void 0 ? void 0 : _node_labels[0]) || (node === null || node === void 0 ? void 0 : (_node_properties = node.properties) === null || _node_properties === void 0 ? void 0 : _node_properties.type) || inferClientEntityType(getNodeDisplayName(node)));
+}
+function getGraphCounts(graph) {
+    return {
+        nodes: Array.isArray(graph === null || graph === void 0 ? void 0 : graph.nodes) ? graph.nodes.length : 0,
+        edges: Array.isArray(graph === null || graph === void 0 ? void 0 : graph.edges) ? graph.edges.length : 0
     };
-    let totalWeight = 0;
-    let maxWeight = 0;
-    for (const p of riskPaths){
-        const w = weights[p.risk_level] || 1;
-        totalWeight += w;
-        maxWeight += 3;
-    }
-    return Math.round(totalWeight / maxWeight * 100);
+}
+function getEdgeEndpoint(edge, key) {
+    const value = (edge === null || edge === void 0 ? void 0 : edge[key]) ?? (edge === null || edge === void 0 ? void 0 : edge[`${key}_id`]) ?? (edge === null || edge === void 0 ? void 0 : edge[`${key}Id`]);
+    if (typeof value === 'object' && value !== null) return String(value.id || value.name || '');
+    return String(value || '');
 }
 function formatTimestamp(ts) {
     if (!ts) return new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -4240,43 +7382,28 @@ function generateReportId(ts) {
     const seq = String(d.getTime() % 100000).padStart(5, '0');
     return `WIND-RPT-${y}${m}${day}-${seq}`;
 }
-const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry, onJumpToGraph, onAddMonitor, onGenerateTicket, queryText })=>{
-    var _report_subgraph_summary, _stages_, _report_risk_paths, _report_anomaly_findings, _report_compliance_matches;
+const RiskReportPanel = ({ report, stages, community, entityCommunityMap, isLoading, error, onRetry, onJumpToGraph, queryText, currentSubgraph, resolvedEntities, governancePlan: governancePlanProp })=>{
+    var _this, _currentSubgraph_nodes, _report_subgraph_summary, _seededCommunityData_visualization, _stages_;
     _s();
     const { message } = _antd.App.useApp();
     const [historyOpen, setHistoryOpen] = (0, _react.useState)(false);
     const [historyLoading, setHistoryLoading] = (0, _react.useState)(false);
     const [historyReports, setHistoryReports] = (0, _react.useState)([]);
     const [showAllPaths, setShowAllPaths] = (0, _react.useState)(false);
+    const [riskPathMode, setRiskPathMode] = (0, _react.useState)('community');
+    const [communityNodePositions, setCommunityNodePositions] = (0, _react.useState)({});
+    const [draggingCommunityNodeId, setDraggingCommunityNodeId] = (0, _react.useState)(null);
+    const [hoveredCommunityNodeId, setHoveredCommunityNodeId] = (0, _react.useState)(null);
     const [highlightSection, setHighlightSection] = (0, _react.useState)(null);
     const finalReportRef = (0, _react.useRef)(null);
     const reportId = (report === null || report === void 0 ? void 0 : report.report_id) || generateReportId(report === null || report === void 0 ? void 0 : report.generated_at);
-    const riskScore = (0, _react.useMemo)(()=>report ? computeRiskScore(report.risk_paths) : 0, [
-        report
-    ]);
-    (0, _react.useEffect)(()=>{
-        if (report && finalReportRef.current) {
-            const timer = setTimeout(()=>{
-                var _finalReportRef_current;
-                (_finalReportRef_current = finalReportRef.current) === null || _finalReportRef_current === void 0 || _finalReportRef_current.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-                setHighlightSection('final-report');
-                setTimeout(()=>setHighlightSection(null), 2000);
-            }, 500);
-            return ()=>clearTimeout(timer);
-        }
-    }, [
-        report === null || report === void 0 ? void 0 : report.report_id
-    ]);
-    const { highCount, mediumCount, lowCount, sortedEntities, entityTypeData } = (0, _react.useMemo)(()=>{
+    const governancePlan = governancePlanProp || ((_this = report) === null || _this === void 0 ? void 0 : _this.governance_plan);
+    const { highCount, mediumCount, lowCount, sortedEntities } = (0, _react.useMemo)(()=>{
         if (!report) return {
             highCount: 0,
             mediumCount: 0,
             lowCount: 0,
-            sortedEntities: [],
-            entityTypeData: []
+            sortedEntities: []
         };
         let high = 0, medium = 0, low = 0;
         for (const path of report.risk_paths || []){
@@ -4302,30 +7429,11 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
             });
         }
         const sorted = Array.from(entityCounts.entries()).sort((a, b)=>b[1].count - a[1].count).slice(0, 10);
-        const typeCountMap = new Map();
-        if (report.raw_data) for (const row of report.raw_data){
-            const t = row.type || row.entity_type || 'Unknown';
-            typeCountMap.set(t, (typeCountMap.get(t) || 0) + 1);
-        }
-        const typeData = Array.from(typeCountMap.entries()).map(([name, count], idx)=>({
-                name,
-                count,
-                color: [
-                    '#1890ff',
-                    '#52c41a',
-                    '#fa8c16',
-                    '#f5222d',
-                    '#722ed1',
-                    '#13c2c2',
-                    '#eb2f96'
-                ][idx % 7]
-            })).sort((a, b)=>b.count - a.count);
         return {
             highCount: high,
             mediumCount: medium,
             lowCount: low,
-            sortedEntities: sorted,
-            entityTypeData: typeData
+            sortedEntities: sorted
         };
     }, [
         report
@@ -4373,7 +7481,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
     };
     const handleExportMD = ()=>{
         if (!(report === null || report === void 0 ? void 0 : report.markdown_report)) return;
-        const header = `# WindEye 风险分析报告\n\n**报告编号**: ${reportId}\n**生成时间**: ${formatTimestamp(report.generated_at)}\n**查询**: ${queryText || report.query_summary || '-'}\n\n---\n\n`;
+        const header = `# WindEye 协同治理报告\n\n**报告编号**: ${reportId}\n**生成时间**: ${formatTimestamp(report.generated_at)}\n**查询**: ${queryText || report.query_summary || '-'}\n\n---\n\n`;
         const blob = new Blob([
             header + report.markdown_report
         ], {
@@ -4389,21 +7497,39 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
     const handleExportPDF = ()=>{
         window.print();
     };
-    const handleExportWord = ()=>{
-        if (!(report === null || report === void 0 ? void 0 : report.markdown_report)) return;
-        let html = report.markdown_report.replace(/^### (.+)$/gm, '<h3>$1</h3>').replace(/^## (.+)$/gm, '<h2>$1</h2>').replace(/^# (.+)$/gm, '<h1>$1</h1>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/^- (.+)$/gm, '<li>$1</li>').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br/>');
-        html = `<html><head><meta charset="utf-8"><style>body{font-family:'Microsoft YaHei',sans-serif;max-width:800px;margin:40px auto;line-height:1.8;color:#333}h1{color:#1a1a2e;border-bottom:2px solid #2855D1;padding-bottom:8px}h2{color:#2855D1}h3{color:#475569}li{margin:4px 0}</style></head><body><h1>WindEye 风险分析报告</h1><p><strong>报告编号:</strong> ${reportId}<br/><strong>生成时间:</strong> ${formatTimestamp(report.generated_at)}<br/><strong>查询:</strong> ${queryText || report.query_summary || '-'}</p><hr/><p>${html}</p></body></html>`;
-        const blob = new Blob([
-            html
-        ], {
-            type: 'application/msword'
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${reportId}.doc`;
-        a.click();
-        URL.revokeObjectURL(url);
+    const handleExportWord = async ()=>{
+        if (!report) return;
+        const hide = message.loading('正在生成 Word 文档...', 0);
+        try {
+            const resp = await fetch('/api/v1/risk/reports/export-docx', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    report,
+                    reportId,
+                    queryText: queryText || report.query_summary || '-'
+                })
+            });
+            if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
+            const blob = await resp.blob();
+            if (blob.type.includes('application/json')) {
+                const text = await blob.text();
+                throw new Error(text || '导出失败');
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${reportId}.docx`;
+            a.click();
+            URL.revokeObjectURL(url);
+            message.success('Word 文档已生成');
+        } catch (err) {
+            message.error((err === null || err === void 0 ? void 0 : err.message) || 'Word 导出失败');
+        } finally{
+            hide();
+        }
     };
     const scrollToSection = (key)=>{
         const el = document.getElementById(`risk-section-${key}`);
@@ -4429,10 +7555,10 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                             fontSize: 14,
                             display: 'block'
                         },
-                        children: "输入风险相关问题，生成风险分析报告"
+                        children: "输入协同治理相关问题，生成协同治理报告"
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 302,
+                        lineNumber: 316,
                         columnNumber: 15
                     }, void 0),
                     (0, _jsxdevruntime.jsxDEV)(Text, {
@@ -4440,26 +7566,26 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                             color: '#94A3B8',
                             fontSize: 12
                         },
-                        children: "任务规划 → 图谱检索 → 实体统计 → 群体发现 → 风险分析 → 合规匹配 → 报告生成"
+                        children: "任务规划 → 图谱检索 → 实体统计 → 群体发现 → 协同治理 → 合规匹配 → 报告生成"
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 305,
+                        lineNumber: 319,
                         columnNumber: 15
                     }, void 0)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                lineNumber: 301,
+                lineNumber: 315,
                 columnNumber: 13
             }, void 0)
         }, void 0, false, {
             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-            lineNumber: 298,
+            lineNumber: 312,
             columnNumber: 9
         }, this)
     }, void 0, false, {
         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-        lineNumber: 297,
+        lineNumber: 311,
         columnNumber: 7
     }, this);
     const sortedPaths = (0, _react.useMemo)(()=>{
@@ -4475,26 +7601,377 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
     }, [
         report
     ]);
-    const sortedRecommendations = (0, _react.useMemo)(()=>{
-        if (!(report === null || report === void 0 ? void 0 : report.recommendations)) return [];
-        const order = {
-            urgent: 0,
-            normal: 1,
-            low: 2
-        };
-        return [
-            ...report.recommendations
-        ].sort((a, b)=>(order[a.urgency] ?? 3) - (order[b.urgency] ?? 3));
-    }, [
-        report
-    ]);
     const displayedPaths = showAllPaths ? sortedPaths : sortedPaths.slice(0, 5);
     const entityStats = report === null || report === void 0 ? void 0 : report.entity_stats;
-    const totalEntities = (entityStats === null || entityStats === void 0 ? void 0 : entityStats.total_entities) || (report === null || report === void 0 ? void 0 : (_report_subgraph_summary = report.subgraph_summary) === null || _report_subgraph_summary === void 0 ? void 0 : _report_subgraph_summary.node_count) || 0;
-    const entityTypeCounts = (entityStats === null || entityStats === void 0 ? void 0 : entityStats.entity_type_counts) || {};
+    const totalEntities = (entityStats === null || entityStats === void 0 ? void 0 : entityStats.total_entities) || (currentSubgraph === null || currentSubgraph === void 0 ? void 0 : (_currentSubgraph_nodes = currentSubgraph.nodes) === null || _currentSubgraph_nodes === void 0 ? void 0 : _currentSubgraph_nodes.length) || (resolvedEntities === null || resolvedEntities === void 0 ? void 0 : resolvedEntities.length) || (report === null || report === void 0 ? void 0 : (_report_subgraph_summary = report.subgraph_summary) === null || _report_subgraph_summary === void 0 ? void 0 : _report_subgraph_summary.node_count) || 0;
     const topEntities = (entityStats === null || entityStats === void 0 ? void 0 : entityStats.top_entities) || [];
     const communityInfo = report === null || report === void 0 ? void 0 : report.community_info;
     const communities = (communityInfo === null || communityInfo === void 0 ? void 0 : communityInfo.communities) || (community === null || community === void 0 ? void 0 : community.communities) || [];
+    const seededCommunityData = {
+        ...community || {},
+        ...communityInfo || {}
+    };
+    const communitySubgraph = seededCommunityData.subgraph || currentSubgraph;
+    const connectedCommunitySubgraph = seededCommunityData.connected_subgraph || seededCommunityData.connectedSubgraph || currentSubgraph;
+    const seedNodes = seededCommunityData.seed_nodes || seededCommunityData.seedNodes || [];
+    const mergedEntityCommunityMap = seededCommunityData.entity_community_map || seededCommunityData.entityCommunityMap || entityCommunityMap || (report === null || report === void 0 ? void 0 : report.entity_community_map);
+    const subgraphCounts = getGraphCounts(communitySubgraph);
+    const connectedSubgraphCounts = getGraphCounts(connectedCommunitySubgraph);
+    const communityAlgorithm = seededCommunityData.algorithm || seededCommunityData.selected_method || seededCommunityData.method;
+    const riskSubjects = (0, _react.useMemo)(()=>{
+        const seen = new Set();
+        const subjects = [];
+        const add = (name, type, id, source = '识别')=>{
+            const cleanName = String(name || '').trim();
+            if (!cleanName || seen.has(cleanName)) return;
+            seen.add(cleanName);
+            subjects.push({
+                id: id || cleanName,
+                name: cleanName,
+                type: type || inferClientEntityType(cleanName),
+                source
+            });
+        };
+        (resolvedEntities || []).forEach((entity)=>{
+            add(entity.name || entity.raw || entity.canonical_name, entity.type || entity.label, entity.kg_node_id || entity.id, '实体对齐');
+        });
+        topEntities.forEach((entity)=>add(entity.name, entity.type, entity.id, '图谱统计'));
+        sortedEntities.forEach(([name])=>add(name, inferClientEntityType(name), name, '风险涉及'));
+        ((currentSubgraph === null || currentSubgraph === void 0 ? void 0 : currentSubgraph.nodes) || []).forEach((node)=>{
+            var _node_properties, _node_labels;
+            add(node.name || ((_node_properties = node.properties) === null || _node_properties === void 0 ? void 0 : _node_properties.name) || node.id, node.type || node.label || ((_node_labels = node.labels) === null || _node_labels === void 0 ? void 0 : _node_labels[0]), node.id, '子图');
+        });
+        return subjects.slice(0, 12);
+    }, [
+        resolvedEntities,
+        topEntities,
+        sortedEntities,
+        currentSubgraph
+    ]);
+    const seedFlowNodes = (0, _react.useMemo)(()=>{
+        const normalized = (Array.isArray(seedNodes) ? seedNodes : []).map((node)=>({
+                id: String(node.id || node.kg_node_id || getNodeDisplayName(node)),
+                name: getNodeDisplayName(node),
+                type: getNodeDisplayType(node)
+            })).filter((node)=>node.name);
+        if (normalized.length > 0) return normalized.slice(0, 6);
+        return riskSubjects.slice(0, 6);
+    }, [
+        seedNodes,
+        riskSubjects
+    ]);
+    const communityIdByNode = (0, _react.useMemo)(()=>{
+        var _this;
+        const map = new Map();
+        const entityEntries = ((_this = mergedEntityCommunityMap) === null || _this === void 0 ? void 0 : _this.entities) || [];
+        entityEntries.forEach((entry)=>{
+            var _entry_communities_, _entry_communities;
+            const communityId = entry === null || entry === void 0 ? void 0 : (_entry_communities = entry.communities) === null || _entry_communities === void 0 ? void 0 : (_entry_communities_ = _entry_communities[0]) === null || _entry_communities_ === void 0 ? void 0 : _entry_communities_.community_id;
+            if (communityId === undefined || communityId === null) return;
+            [
+                entry.id,
+                entry.name
+            ].filter(Boolean).forEach((key)=>map.set(String(key), Number(communityId)));
+        });
+        communities.forEach((comm)=>{
+            const communityId = Number(comm.community_id ?? comm.id ?? 0);
+            (comm.member_ids || []).forEach((id)=>map.set(String(id), communityId));
+            (comm.members || []).forEach((member)=>{
+                [
+                    member.id,
+                    member.name
+                ].filter(Boolean).forEach((key)=>map.set(String(key), communityId));
+            });
+            (comm.top_entities || comm.core_nodes || []).forEach((member)=>{
+                [
+                    member.id,
+                    member.name
+                ].filter(Boolean).forEach((key)=>map.set(String(key), communityId));
+            });
+        });
+        return map;
+    }, [
+        mergedEntityCommunityMap,
+        communities
+    ]);
+    const communityPreviewGraph = (0, _react.useMemo)(()=>{
+        const graphNodes = (connectedCommunitySubgraph === null || connectedCommunitySubgraph === void 0 ? void 0 : connectedCommunitySubgraph.nodes) || (communitySubgraph === null || communitySubgraph === void 0 ? void 0 : communitySubgraph.nodes) || (currentSubgraph === null || currentSubgraph === void 0 ? void 0 : currentSubgraph.nodes) || [];
+        const graphEdges = (connectedCommunitySubgraph === null || connectedCommunitySubgraph === void 0 ? void 0 : connectedCommunitySubgraph.edges) || (communitySubgraph === null || communitySubgraph === void 0 ? void 0 : communitySubgraph.edges) || (currentSubgraph === null || currentSubgraph === void 0 ? void 0 : currentSubgraph.edges) || [];
+        const nodes = graphNodes.slice(0, 38).map((node, index)=>{
+            const id = String(node.id || getNodeDisplayName(node) || index);
+            const name = getNodeDisplayName(node) || id;
+            return {
+                id,
+                name,
+                type: getNodeDisplayType(node),
+                communityId: communityIdByNode.get(id) ?? communityIdByNode.get(name),
+                isSeed: seedFlowNodes.some((seed)=>seed.id === id || seed.name === name),
+                x: 50,
+                y: 50
+            };
+        });
+        const centers = [
+            {
+                x: 28,
+                y: 36
+            },
+            {
+                x: 66,
+                y: 34
+            },
+            {
+                x: 36,
+                y: 68
+            },
+            {
+                x: 72,
+                y: 68
+            },
+            {
+                x: 50,
+                y: 50
+            },
+            {
+                x: 18,
+                y: 58
+            }
+        ];
+        const grouped = new Map();
+        nodes.forEach((node)=>{
+            const key = node.communityId !== undefined ? String(node.communityId) : 'unknown';
+            grouped.set(key, [
+                ...grouped.get(key) || [],
+                node
+            ]);
+        });
+        Array.from(grouped.entries()).forEach(([key, group], groupIndex)=>{
+            const center = centers[groupIndex % centers.length];
+            const radius = group.length <= 1 ? 0 : Math.min(17, 8 + group.length * 1.4);
+            group.forEach((node, index)=>{
+                const angle = Math.PI * 2 * index / Math.max(group.length, 1) - Math.PI / 2;
+                node.x = Math.max(6, Math.min(94, center.x + Math.cos(angle) * radius));
+                node.y = Math.max(10, Math.min(90, center.y + Math.sin(angle) * radius));
+                if (key === 'unknown') {
+                    node.x = 14 + index * 23 % 72;
+                    node.y = 18 + index * 31 % 62;
+                }
+            });
+        });
+        nodes.forEach((node)=>{
+            const moved = communityNodePositions[node.id];
+            if (moved) {
+                node.x = moved.x;
+                node.y = moved.y;
+            }
+        });
+        const nodeById = new Map(nodes.map((node)=>[
+                node.id,
+                node
+            ]));
+        const nodeByName = new Map(nodes.map((node)=>[
+                node.name,
+                node
+            ]));
+        const edges = graphEdges.map((edge)=>{
+            const sourceKey = getEdgeEndpoint(edge, 'source');
+            const targetKey = getEdgeEndpoint(edge, 'target');
+            const source = nodeById.get(sourceKey) || nodeByName.get(sourceKey);
+            const target = nodeById.get(targetKey) || nodeByName.get(targetKey);
+            if (!source || !target || source.id === target.id) return null;
+            return {
+                id: edge.id || `${source.id}-${target.id}`,
+                source,
+                target,
+                relation: edge.relation || edge.type || edge.label || ''
+            };
+        }).filter(Boolean).slice(0, 90);
+        return {
+            nodes,
+            edges,
+            groups: Array.from(grouped.entries())
+        };
+    }, [
+        connectedCommunitySubgraph,
+        communitySubgraph,
+        currentSubgraph,
+        communityIdByNode,
+        seedFlowNodes,
+        communityNodePositions
+    ]);
+    const getCommunitySvgPoint = (0, _react.useCallback)((event)=>{
+        const svg = event.currentTarget instanceof SVGSVGElement ? event.currentTarget : event.currentTarget.ownerSVGElement;
+        const rect = svg === null || svg === void 0 ? void 0 : svg.getBoundingClientRect();
+        if (!rect || rect.width === 0 || rect.height === 0) return {
+            x: 50,
+            y: 50
+        };
+        return {
+            x: Math.max(4, Math.min(96, (event.clientX - rect.left) / rect.width * 100)),
+            y: Math.max(8, Math.min(92, (event.clientY - rect.top) / rect.height * 100))
+        };
+    }, []);
+    const handleCommunityNodePointerDown = (0, _react.useCallback)((event, nodeId)=>{
+        var _event_currentTarget_setPointerCapture, _event_currentTarget;
+        event.preventDefault();
+        event.stopPropagation();
+        (_event_currentTarget_setPointerCapture = (_event_currentTarget = event.currentTarget).setPointerCapture) === null || _event_currentTarget_setPointerCapture === void 0 || _event_currentTarget_setPointerCapture.call(_event_currentTarget, event.pointerId);
+        setDraggingCommunityNodeId(nodeId);
+        const point = getCommunitySvgPoint(event);
+        setCommunityNodePositions((prev)=>({
+                ...prev,
+                [nodeId]: point
+            }));
+    }, [
+        getCommunitySvgPoint
+    ]);
+    const handleCommunityGraphPointerMove = (0, _react.useCallback)((event)=>{
+        if (!draggingCommunityNodeId) return;
+        const point = getCommunitySvgPoint(event);
+        setCommunityNodePositions((prev)=>({
+                ...prev,
+                [draggingCommunityNodeId]: point
+            }));
+    }, [
+        draggingCommunityNodeId,
+        getCommunitySvgPoint
+    ]);
+    const stopCommunityGraphDrag = (0, _react.useCallback)(()=>{
+        setDraggingCommunityNodeId(null);
+    }, []);
+    const flowKeys = Array.isArray((_seededCommunityData_visualization = seededCommunityData.visualization) === null || _seededCommunityData_visualization === void 0 ? void 0 : _seededCommunityData_visualization.flow) ? seededCommunityData.visualization.flow : [
+        'seed_nodes',
+        'subgraph',
+        'connected_subgraph',
+        'communities'
+    ];
+    const flowLabelMap = {
+        seed_nodes: '种子节点',
+        n_hop_network: 'N 跳子图',
+        subgraph: 'N 跳子图',
+        connected_subgraph: '最大连通子图',
+        communities: '群体结果'
+    };
+    const flowCards = [
+        {
+            key: 'seed_nodes',
+            title: flowLabelMap[flowKeys[0]] || '种子节点',
+            value: seedFlowNodes.length,
+            desc: '风险主体输入'
+        },
+        {
+            key: 'subgraph',
+            title: flowLabelMap[flowKeys[1]] || 'N 跳子图',
+            value: subgraphCounts.nodes,
+            desc: `${subgraphCounts.edges} 条关系`
+        },
+        {
+            key: 'connected_subgraph',
+            title: flowLabelMap[flowKeys[2]] || '最大连通子图',
+            value: connectedSubgraphCounts.nodes,
+            desc: `${connectedSubgraphCounts.edges} 条关系`
+        },
+        {
+            key: 'communities',
+            title: flowLabelMap[flowKeys[3]] || '群体结果',
+            value: communities.length,
+            desc: '社区划分'
+        }
+    ];
+    const compactSeedNames = seedFlowNodes.slice(0, 3).map((node)=>node.name);
+    const visibleCommunities = communities.slice(0, 6);
+    const riskTransmissionGraph = (0, _react.useMemo)(()=>{
+        const levelOrder = {
+            high: 0,
+            medium: 1,
+            low: 2
+        };
+        const communityNodes = new Map();
+        const communityEdges = new Map();
+        communities.forEach((comm)=>{
+            const cid = Number(comm.community_id ?? comm.id ?? 0);
+            const members = comm.members || comm.top_entities || [];
+            communityNodes.set(cid, {
+                id: cid,
+                size: Number(comm.size || members.length || 0),
+                label: `群体 #${cid}`,
+                pathCount: 0,
+                highCount: 0,
+                mediumCount: 0,
+                sampleEntities: members.slice(0, 3).map((m)=>m.name || String(m.id || '')),
+                x: 50,
+                y: 50
+            });
+        });
+        const pathRows = sortedPaths.map((path)=>{
+            const entitySteps = (path.affected_entities || []).map((name)=>{
+                const cid = communityIdByNode.get(name);
+                return {
+                    name,
+                    type: inferClientEntityType(name),
+                    communityId: cid
+                };
+            });
+            const communitySequence = entitySteps.map((step)=>step.communityId).filter((cid)=>cid !== undefined && cid !== null).filter((cid, index, arr)=>index === 0 || cid !== arr[index - 1]);
+            communitySequence.forEach((cid)=>{
+                const node = communityNodes.get(cid) || {
+                    id: cid,
+                    size: 0,
+                    label: `群体 #${cid}`,
+                    pathCount: 0,
+                    highCount: 0,
+                    mediumCount: 0,
+                    sampleEntities: [],
+                    x: 50,
+                    y: 50
+                };
+                node.pathCount += 1;
+                if (path.risk_level === 'high') node.highCount += 1;
+                if (path.risk_level === 'medium') node.mediumCount += 1;
+                communityNodes.set(cid, node);
+            });
+            for(let i = 0; i < communitySequence.length - 1; i += 1){
+                const source = communitySequence[i];
+                const target = communitySequence[i + 1];
+                const key = `${source}->${target}`;
+                const current = communityEdges.get(key) || {
+                    source,
+                    target,
+                    count: 0,
+                    level: path.risk_level,
+                    pathIds: []
+                };
+                current.count += 1;
+                current.pathIds.push(path.path_id);
+                if ((levelOrder[path.risk_level] ?? 3) < (levelOrder[current.level] ?? 3)) current.level = path.risk_level;
+                communityEdges.set(key, current);
+            }
+            return {
+                path,
+                entitySteps,
+                communitySequence
+            };
+        });
+        const nodes = Array.from(communityNodes.values()).filter((node)=>node.pathCount > 0 || communities.length <= 6).slice(0, 10);
+        const centerX = 50;
+        const centerY = 48;
+        const radius = nodes.length <= 3 ? 26 : 34;
+        nodes.forEach((node, index)=>{
+            const angle = nodes.length === 1 ? -Math.PI / 2 : Math.PI * 2 * index / nodes.length - Math.PI / 2;
+            node.x = nodes.length === 1 ? centerX : centerX + Math.cos(angle) * radius;
+            node.y = nodes.length === 1 ? centerY : centerY + Math.sin(angle) * Math.min(radius, 28);
+        });
+        const nodeSet = new Set(nodes.map((node)=>node.id));
+        const edges = Array.from(communityEdges.values()).filter((edge)=>nodeSet.has(edge.source) && nodeSet.has(edge.target));
+        return {
+            nodes,
+            edges,
+            pathRows
+        };
+    }, [
+        sortedPaths,
+        communities,
+        communityIdByNode
+    ]);
     return (0, _jsxdevruntime.jsxDEV)("div", {
         className: "risk-report-panel",
         style: {
@@ -4518,7 +7995,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
       `
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                lineNumber: 345,
+                lineNumber: 649,
                 columnNumber: 7
             }, this),
             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -4544,7 +8021,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                     }))
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 362,
+                                lineNumber: 666,
                                 columnNumber: 13
                             }, this),
                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -4560,18 +8037,18 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                     children: ((_stages_ = stages[stages.length - 1]) === null || _stages_ === void 0 ? void 0 : _stages_.content) || '初始化中...'
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 371,
+                                    lineNumber: 675,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 370,
+                                lineNumber: 674,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 361,
+                        lineNumber: 665,
                         columnNumber: 11
                     }, this),
                     isLoading && !report && stages.length === 0 && (0, _jsxdevruntime.jsxDEV)(_antd.Card, {
@@ -4591,7 +8068,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                     size: "large"
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 382,
+                                    lineNumber: 686,
                                     columnNumber: 15
                                 }, this),
                                 (0, _jsxdevruntime.jsxDEV)("div", {
@@ -4600,21 +8077,21 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                         color: '#94a3b8',
                                         fontSize: 14
                                     },
-                                    children: "正在初始化风险分析流程..."
+                                    children: "正在初始化协同治理流程..."
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 383,
+                                    lineNumber: 687,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                            lineNumber: 381,
+                            lineNumber: 685,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 380,
+                        lineNumber: 684,
                         columnNumber: 11
                     }, this),
                     error && !report && (0, _jsxdevruntime.jsxDEV)(_antd.Card, {
@@ -4635,36 +8112,36 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                         marginBottom: 12
                                     },
                                     children: [
-                                        "风险分析失败: ",
+                                        "协同治理分析失败: ",
                                         error
                                     ]
                                 }, void 0, true, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 394,
+                                    lineNumber: 698,
                                     columnNumber: 15
                                 }, this),
                                 onRetry && (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
                                     icon: (0, _jsxdevruntime.jsxDEV)(_icons.ReloadOutlined, {}, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 398,
+                                        lineNumber: 702,
                                         columnNumber: 31
                                     }, void 0),
                                     onClick: onRetry,
                                     children: "重试"
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 398,
+                                    lineNumber: 702,
                                     columnNumber: 17
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                            lineNumber: 393,
+                            lineNumber: 697,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 392,
+                        lineNumber: 696,
                         columnNumber: 11
                     }, this),
                     report && (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
@@ -4707,7 +8184,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                         children: "W"
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 410,
+                                                        lineNumber: 714,
                                                         columnNumber: 19
                                                     }, this),
                                                     (0, _jsxdevruntime.jsxDEV)("div", {
@@ -4726,14 +8203,14 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                         }
                                                                     }, void 0, false, {
                                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 429,
+                                                                        lineNumber: 733,
                                                                         columnNumber: 23
                                                                     }, this),
-                                                                    "风险分析报告"
+                                                                    "协同治理报告"
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 428,
+                                                                lineNumber: 732,
                                                                 columnNumber: 21
                                                             }, this),
                                                             (0, _jsxdevruntime.jsxDEV)(Text, {
@@ -4748,19 +8225,19 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 432,
+                                                                lineNumber: 736,
                                                                 columnNumber: 21
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 427,
+                                                        lineNumber: 731,
                                                         columnNumber: 19
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 409,
+                                                lineNumber: 713,
                                                 columnNumber: 17
                                             }, this),
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
@@ -4771,18 +8248,18 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                             size: "small",
                                                             icon: (0, _jsxdevruntime.jsxDEV)(_icons.HistoryOutlined, {}, void 0, false, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 439,
+                                                                lineNumber: 743,
                                                                 columnNumber: 48
                                                             }, void 0),
                                                             onClick: loadHistory
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 439,
+                                                            lineNumber: 743,
                                                             columnNumber: 21
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 438,
+                                                        lineNumber: 742,
                                                         columnNumber: 19
                                                     }, this),
                                                     (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
@@ -4791,18 +8268,18 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                             size: "small",
                                                             icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileMarkdownOutlined, {}, void 0, false, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 442,
+                                                                lineNumber: 746,
                                                                 columnNumber: 48
                                                             }, void 0),
                                                             onClick: handleExportMD
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 442,
+                                                            lineNumber: 746,
                                                             columnNumber: 21
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 441,
+                                                        lineNumber: 745,
                                                         columnNumber: 19
                                                     }, this),
                                                     (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
@@ -4811,18 +8288,18 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                             size: "small",
                                                             icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileWordOutlined, {}, void 0, false, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 445,
+                                                                lineNumber: 749,
                                                                 columnNumber: 48
                                                             }, void 0),
                                                             onClick: handleExportWord
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 445,
+                                                            lineNumber: 749,
                                                             columnNumber: 21
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 444,
+                                                        lineNumber: 748,
                                                         columnNumber: 19
                                                     }, this),
                                                     (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
@@ -4831,30 +8308,30 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                             size: "small",
                                                             icon: (0, _jsxdevruntime.jsxDEV)(_icons.FilePdfOutlined, {}, void 0, false, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 448,
+                                                                lineNumber: 752,
                                                                 columnNumber: 48
                                                             }, void 0),
                                                             onClick: handleExportPDF
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 448,
+                                                            lineNumber: 752,
                                                             columnNumber: 21
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 447,
+                                                        lineNumber: 751,
                                                         columnNumber: 19
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 437,
+                                                lineNumber: 741,
                                                 columnNumber: 17
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 408,
+                                        lineNumber: 712,
                                         columnNumber: 15
                                     }, this),
                                     queryText && (0, _jsxdevruntime.jsxDEV)("div", {
@@ -4875,107 +8352,107 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                             ]
                                         }, void 0, true, {
                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 454,
+                                            lineNumber: 758,
                                             columnNumber: 19
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 453,
+                                        lineNumber: 757,
                                         columnNumber: 17
                                     }, this),
-                                    (0, _jsxdevruntime.jsxDEV)(_antd.Row, {
-                                        gutter: 12,
+                                    (0, _jsxdevruntime.jsxDEV)("div", {
                                         style: {
-                                            marginTop: 12
+                                            marginTop: 12,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            flexWrap: 'wrap'
                                         },
                                         children: [
-                                            (0, _jsxdevruntime.jsxDEV)(_antd.Col, {
-                                                span: 6,
-                                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Statistic, {
-                                                    title: "实体总数",
-                                                    value: totalEntities,
-                                                    valueStyle: {
-                                                        fontSize: 18,
-                                                        fontWeight: 700
-                                                    }
-                                                }, void 0, false, {
+                                            {
+                                                key: 'entity-stats',
+                                                label: '风险主体',
+                                                icon: (0, _jsxdevruntime.jsxDEV)(_icons.TeamOutlined, {}, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 462,
-                                                    columnNumber: 19
-                                                }, this)
-                                            }, void 0, false, {
-                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 461,
-                                                columnNumber: 17
-                                            }, this),
-                                            (0, _jsxdevruntime.jsxDEV)(_antd.Col, {
-                                                span: 6,
-                                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Statistic, {
-                                                    title: "风险路径",
-                                                    value: ((_report_risk_paths = report.risk_paths) === null || _report_risk_paths === void 0 ? void 0 : _report_risk_paths.length) || 0,
-                                                    valueStyle: {
-                                                        fontSize: 18,
-                                                        fontWeight: 700,
-                                                        color: RISK_LEVEL_COLORS[report.overall_risk_level]
-                                                    }
-                                                }, void 0, false, {
+                                                    lineNumber: 765,
+                                                    columnNumber: 63
+                                                }, this),
+                                                color: '#2855D1'
+                                            },
+                                            {
+                                                key: 'community',
+                                                label: '群体发现',
+                                                icon: (0, _jsxdevruntime.jsxDEV)(_icons.ClusterOutlined, {}, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 465,
-                                                    columnNumber: 19
-                                                }, this)
-                                            }, void 0, false, {
-                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 464,
-                                                columnNumber: 17
-                                            }, this),
-                                            (0, _jsxdevruntime.jsxDEV)(_antd.Col, {
-                                                span: 6,
-                                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Statistic, {
-                                                    title: "异常发现",
-                                                    value: ((_report_anomaly_findings = report.anomaly_findings) === null || _report_anomaly_findings === void 0 ? void 0 : _report_anomaly_findings.length) || 0,
-                                                    valueStyle: {
-                                                        fontSize: 18,
-                                                        fontWeight: 700
-                                                    }
-                                                }, void 0, false, {
+                                                    lineNumber: 766,
+                                                    columnNumber: 60
+                                                }, this),
+                                                color: '#722ed1'
+                                            },
+                                            {
+                                                key: 'risk-paths',
+                                                label: '风险传导路径',
+                                                icon: (0, _jsxdevruntime.jsxDEV)(_icons.NodeIndexOutlined, {}, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 472,
-                                                    columnNumber: 19
-                                                }, this)
-                                            }, void 0, false, {
-                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 471,
-                                                columnNumber: 17
-                                            }, this),
-                                            (0, _jsxdevruntime.jsxDEV)(_antd.Col, {
-                                                span: 6,
-                                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Statistic, {
-                                                    title: "合规匹配",
-                                                    value: ((_report_compliance_matches = report.compliance_matches) === null || _report_compliance_matches === void 0 ? void 0 : _report_compliance_matches.length) || 0,
-                                                    valueStyle: {
-                                                        fontSize: 18,
-                                                        fontWeight: 700
-                                                    }
-                                                }, void 0, false, {
+                                                    lineNumber: 767,
+                                                    columnNumber: 63
+                                                }, this),
+                                                color: '#f5222d'
+                                            },
+                                            {
+                                                key: 'final-report',
+                                                label: '协同治理社区报告',
+                                                icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {}, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 475,
-                                                    columnNumber: 19
-                                                }, this)
-                                            }, void 0, false, {
+                                                    lineNumber: 768,
+                                                    columnNumber: 67
+                                                }, this),
+                                                color: '#0f766e'
+                                            }
+                                        ].map((step, idx, arr)=>(0, _jsxdevruntime.jsxDEV)(_react.default.Fragment, {
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                                        size: "small",
+                                                        type: "text",
+                                                        icon: step.icon,
+                                                        onClick: ()=>scrollToSection(step.key),
+                                                        style: {
+                                                            color: step.color,
+                                                            padding: '0 6px',
+                                                            height: 24
+                                                        },
+                                                        children: step.label
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 771,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    idx < arr.length - 1 && (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                        type: "secondary",
+                                                        style: {
+                                                            fontSize: 12
+                                                        },
+                                                        children: "→"
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 780,
+                                                        columnNumber: 46
+                                                    }, this)
+                                                ]
+                                            }, step.key, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 474,
-                                                columnNumber: 17
-                                            }, this)
-                                        ]
-                                    }, void 0, true, {
+                                                lineNumber: 770,
+                                                columnNumber: 19
+                                            }, this))
+                                    }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 460,
+                                        lineNumber: 763,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 407,
+                                lineNumber: 711,
                                 columnNumber: 13
                             }, this),
                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -5000,262 +8477,105 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 }
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 490,
+                                                lineNumber: 796,
                                                 columnNumber: 21
                                             }, void 0),
-                                            "实体统计",
+                                            "风险主体",
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
                                                 style: {
                                                     marginLeft: 8,
                                                     fontSize: 10
                                                 },
                                                 children: [
-                                                    totalEntities,
-                                                    " 个实体"
+                                                    riskSubjects.length || totalEntities,
+                                                    " 个主体"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 492,
+                                                lineNumber: 798,
                                                 columnNumber: 21
                                             }, void 0)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 489,
+                                        lineNumber: 795,
                                         columnNumber: 19
                                     }, void 0),
-                                    children: [
-                                        Object.keys(entityTypeCounts).length > 0 ? (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
-                                            children: [
-                                                (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                    type: "secondary",
-                                                    style: {
-                                                        fontSize: 12,
-                                                        display: 'block',
-                                                        marginBottom: 8
-                                                    },
-                                                    children: "实体类型分布"
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 498,
-                                                    columnNumber: 21
-                                                }, this),
-                                                (0, _jsxdevruntime.jsxDEV)(_EventBarChart.default, {
-                                                    data: Object.entries(entityTypeCounts).map(([name, count], idx)=>({
-                                                            name,
-                                                            count,
-                                                            color: [
-                                                                '#1890ff',
-                                                                '#52c41a',
-                                                                '#fa8c16',
-                                                                '#f5222d',
-                                                                '#722ed1',
-                                                                '#13c2c2',
-                                                                '#eb2f96'
-                                                            ][idx % 7]
-                                                        }))
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 499,
-                                                    columnNumber: 21
-                                                }, this)
-                                            ]
-                                        }, void 0, true) : entityTypeData.length > 0 ? (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
-                                            children: [
-                                                (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                    type: "secondary",
-                                                    style: {
-                                                        fontSize: 12,
-                                                        display: 'block',
-                                                        marginBottom: 8
-                                                    },
-                                                    children: "实体类型分布"
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 509,
-                                                    columnNumber: 21
-                                                }, this),
-                                                (0, _jsxdevruntime.jsxDEV)(_EventBarChart.default, {
-                                                    data: entityTypeData
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 510,
-                                                    columnNumber: 21
-                                                }, this)
-                                            ]
-                                        }, void 0, true) : (0, _jsxdevruntime.jsxDEV)(Text, {
-                                            type: "secondary",
-                                            style: {
-                                                fontSize: 12
-                                            },
-                                            children: "暂无实体类型统计数据"
-                                        }, void 0, false, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 513,
-                                            columnNumber: 19
-                                        }, this),
-                                        topEntities.length > 0 && (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
-                                            children: [
-                                                (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                    type: "secondary",
-                                                    style: {
-                                                        fontSize: 12,
-                                                        display: 'block',
-                                                        marginTop: 12,
-                                                        marginBottom: 4
-                                                    },
-                                                    children: [
-                                                        "前 ",
-                                                        topEntities.length,
-                                                        " 个实体"
-                                                    ]
-                                                }, void 0, true, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 518,
-                                                    columnNumber: 21
-                                                }, this),
-                                                (0, _jsxdevruntime.jsxDEV)("div", {
-                                                    style: {
-                                                        display: 'flex',
-                                                        gap: 4,
-                                                        flexWrap: 'wrap'
-                                                    },
-                                                    children: topEntities.map((e, i)=>(0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                            style: {
-                                                                fontSize: 11,
-                                                                borderRadius: 6,
-                                                                cursor: onJumpToGraph ? 'pointer' : 'default'
-                                                            },
-                                                            onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(e.id || e.name, e.name, e.type),
-                                                            children: [
-                                                                onJumpToGraph ? (0, _jsxdevruntime.jsxDEV)(_icons.LinkOutlined, {
-                                                                    style: {
-                                                                        marginRight: 4,
-                                                                        fontSize: 10
-                                                                    }
-                                                                }, void 0, false, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 526,
-                                                                    columnNumber: 44
-                                                                }, this) : null,
-                                                                e.name,
-                                                                (0, _jsxdevruntime.jsxDEV)("span", {
-                                                                    style: {
-                                                                        color: '#94a3b8',
-                                                                        marginLeft: 4,
-                                                                        fontSize: 10
-                                                                    },
-                                                                    children: [
-                                                                        "(",
-                                                                        e.type,
-                                                                        ")"
-                                                                    ]
-                                                                }, void 0, true, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 528,
-                                                                    columnNumber: 27
-                                                                }, this)
-                                                            ]
-                                                        }, i, true, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 521,
-                                                            columnNumber: 25
-                                                        }, this))
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 519,
-                                                    columnNumber: 21
-                                                }, this)
-                                            ]
-                                        }, void 0, true),
-                                        sortedEntities.length > 0 && topEntities.length === 0 && (0, _jsxdevruntime.jsxDEV)(_antd.List, {
-                                            size: "small",
-                                            header: (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                type: "secondary",
+                                    children: riskSubjects.length > 0 ? (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            display: 'flex',
+                                            gap: 6,
+                                            flexWrap: 'wrap'
+                                        },
+                                        children: riskSubjects.map((entity)=>{
+                                            const color = _graphStyles.NODE_TYPE_COLORS[entity.type] || '#2855D1';
+                                            const label = _graphStyles.NODE_TYPE_LABELS[entity.type] || entity.type;
+                                            return (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
                                                 style: {
-                                                    fontSize: 11
+                                                    margin: 0,
+                                                    borderRadius: 6,
+                                                    fontSize: 12,
+                                                    padding: '4px 8px',
+                                                    cursor: onJumpToGraph ? 'pointer' : 'default',
+                                                    background: `${color}10`,
+                                                    border: `1px solid ${color}40`,
+                                                    color
                                                 },
-                                                children: "相关实体（前 10）"
-                                            }, void 0, false, {
-                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 538,
-                                                columnNumber: 29
-                                            }, void 0),
-                                            dataSource: sortedEntities,
-                                            renderItem: ([name, { count }])=>(0, _jsxdevruntime.jsxDEV)(_antd.List.Item, {
-                                                    style: {
-                                                        padding: '2px 0',
-                                                        cursor: onJumpToGraph ? 'pointer' : 'default'
-                                                    },
-                                                    onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(name, name, 'Entity'),
-                                                    children: (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
+                                                onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(entity.id, entity.name, entity.type),
+                                                children: [
+                                                    onJumpToGraph ? (0, _jsxdevruntime.jsxDEV)(_icons.LinkOutlined, {
                                                         style: {
-                                                            width: '100%',
-                                                            justifyContent: 'space-between'
-                                                        },
-                                                        children: [
-                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                style: {
-                                                                    fontSize: 12
-                                                                },
-                                                                ellipsis: true,
-                                                                children: [
-                                                                    onJumpToGraph ? (0, _jsxdevruntime.jsxDEV)(_icons.LinkOutlined, {
-                                                                        style: {
-                                                                            marginRight: 4,
-                                                                            fontSize: 10
-                                                                        }
-                                                                    }, void 0, false, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 547,
-                                                                        columnNumber: 46
-                                                                    }, void 0) : null,
-                                                                    name
-                                                                ]
-                                                            }, void 0, true, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 546,
-                                                                columnNumber: 27
-                                                            }, void 0),
-                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                type: "secondary",
-                                                                style: {
-                                                                    fontSize: 10
-                                                                },
-                                                                children: [
-                                                                    count,
-                                                                    "x"
-                                                                ]
-                                                            }, void 0, true, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 550,
-                                                                columnNumber: 27
-                                                            }, void 0)
-                                                        ]
-                                                    }, void 0, true, {
+                                                            marginRight: 4,
+                                                            fontSize: 10
+                                                        }
+                                                    }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 545,
-                                                        columnNumber: 25
-                                                    }, void 0)
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 541,
-                                                    columnNumber: 23
-                                                }, void 0)
-                                        }, void 0, false, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 536,
-                                            columnNumber: 19
-                                        }, this)
-                                    ]
-                                }, void 0, true, {
+                                                        lineNumber: 822,
+                                                        columnNumber: 44
+                                                    }, this) : null,
+                                                    entity.name,
+                                                    (0, _jsxdevruntime.jsxDEV)("span", {
+                                                        style: {
+                                                            color: '#94a3b8',
+                                                            marginLeft: 6,
+                                                            fontSize: 10
+                                                        },
+                                                        children: label
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 824,
+                                                        columnNumber: 27
+                                                    }, this)
+                                                ]
+                                            }, entity.id, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                lineNumber: 808,
+                                                columnNumber: 25
+                                            }, this);
+                                        })
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                        lineNumber: 803,
+                                        columnNumber: 19
+                                    }, this) : (0, _jsxdevruntime.jsxDEV)(Text, {
+                                        type: "secondary",
+                                        style: {
+                                            fontSize: 12
+                                        },
+                                        children: isLoading ? '风险主体识别中...' : '暂无可展示的风险主体'
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                        lineNumber: 830,
+                                        columnNumber: 19
+                                    }, this)
+                                }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 482,
+                                    lineNumber: 788,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 481,
+                                lineNumber: 787,
                                 columnNumber: 13
                             }, this),
                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -5280,7 +8600,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 }
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 569,
+                                                lineNumber: 847,
                                                 columnNumber: 21
                                             }, void 0),
                                             "群体发现",
@@ -5295,195 +8615,642 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 572,
+                                                lineNumber: 850,
                                                 columnNumber: 23
                                             }, void 0)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 568,
+                                        lineNumber: 846,
                                         columnNumber: 19
                                     }, void 0),
-                                    children: [
-                                        communities.length > 0 ? (0, _jsxdevruntime.jsxDEV)("div", {
-                                            style: {
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: 10
-                                            },
-                                            children: communities.map((comm)=>{
-                                                var _comm_members;
-                                                return (0, _jsxdevruntime.jsxDEV)("div", {
+                                    children: (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 12
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    overflowX: 'auto',
+                                                    paddingBottom: 2
+                                                },
+                                                children: (0, _jsxdevruntime.jsxDEV)("div", {
                                                     style: {
-                                                        padding: '10px 14px',
-                                                        background: '#faf5ff',
-                                                        borderRadius: 8,
-                                                        border: '1px solid #f3e8ff'
+                                                        display: 'grid',
+                                                        gridTemplateColumns: 'repeat(4, minmax(132px, 1fr))',
+                                                        gap: 8,
+                                                        minWidth: 560
                                                     },
-                                                    children: [
-                                                        (0, _jsxdevruntime.jsxDEV)("div", {
+                                                    children: flowCards.map((item, index)=>(0, _jsxdevruntime.jsxDEV)("div", {
                                                             style: {
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: 8,
-                                                                marginBottom: 6
+                                                                height: 72,
+                                                                padding: '10px 12px',
+                                                                borderRadius: 8,
+                                                                border: '1px solid #e2e8f0',
+                                                                background: index === 3 ? '#f5f3ff' : '#f8fafc'
                                                             },
                                                             children: [
                                                                 (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                    strong: true,
-                                                                    style: {
-                                                                        fontSize: 13,
-                                                                        color: '#722ed1'
-                                                                    },
-                                                                    children: [
-                                                                        "群体 #",
-                                                                        comm.community_id
-                                                                    ]
-                                                                }, void 0, true, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 590,
-                                                                    columnNumber: 27
-                                                                }, this),
-                                                                (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                    color: "purple",
-                                                                    style: {
-                                                                        borderRadius: 4,
-                                                                        fontSize: 10,
-                                                                        margin: 0
-                                                                    },
-                                                                    children: [
-                                                                        comm.size,
-                                                                        " 个成员"
-                                                                    ]
-                                                                }, void 0, true, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 593,
-                                                                    columnNumber: 27
-                                                                }, this),
-                                                                comm.modularity !== undefined && comm.modularity !== null && (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                    style: {
-                                                                        fontSize: 10,
-                                                                        borderRadius: 4,
-                                                                        margin: 0,
-                                                                        background: '#f0f5ff',
-                                                                        border: '1px solid #d6e4ff',
-                                                                        color: '#2855D1'
-                                                                    },
-                                                                    children: [
-                                                                        "模块度: ",
-                                                                        comm.modularity.toFixed(3)
-                                                                    ]
-                                                                }, void 0, true, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 597,
-                                                                    columnNumber: 29
-                                                                }, this)
-                                                            ]
-                                                        }, void 0, true, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 589,
-                                                            columnNumber: 25
-                                                        }, this),
-                                                        (0, _jsxdevruntime.jsxDEV)("div", {
-                                                            style: {
-                                                                display: 'flex',
-                                                                gap: 4,
-                                                                flexWrap: 'wrap'
-                                                            },
-                                                            children: [
-                                                                (_comm_members = comm.members) === null || _comm_members === void 0 ? void 0 : _comm_members.slice(0, 15).map((m, i)=>(0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                        style: {
-                                                                            fontSize: 10,
-                                                                            borderRadius: 6,
-                                                                            cursor: onJumpToGraph ? 'pointer' : 'default'
-                                                                        },
-                                                                        onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(m.id, m.name, m.type),
-                                                                        children: [
-                                                                            onJumpToGraph ? (0, _jsxdevruntime.jsxDEV)(_icons.LinkOutlined, {
-                                                                                style: {
-                                                                                    marginRight: 2,
-                                                                                    fontSize: 10
-                                                                                }
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 609,
-                                                                                columnNumber: 48
-                                                                            }, this) : null,
-                                                                            m.name
-                                                                        ]
-                                                                    }, i, true, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 604,
-                                                                        columnNumber: 29
-                                                                    }, this)),
-                                                                comm.members && comm.members.length > 15 && (0, _jsxdevruntime.jsxDEV)(Text, {
                                                                     type: "secondary",
                                                                     style: {
-                                                                        fontSize: 10
+                                                                        fontSize: 11,
+                                                                        display: 'block'
+                                                                    },
+                                                                    children: item.title
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 869,
+                                                                    columnNumber: 27
+                                                                }, this),
+                                                                (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                    strong: true,
+                                                                    style: {
+                                                                        fontSize: 22,
+                                                                        color: index === 3 ? '#722ed1' : '#0f172a',
+                                                                        lineHeight: '28px'
+                                                                    },
+                                                                    children: item.value
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 870,
+                                                                    columnNumber: 27
+                                                                }, this),
+                                                                (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                    type: "secondary",
+                                                                    style: {
+                                                                        fontSize: 10,
+                                                                        display: 'block'
+                                                                    },
+                                                                    children: item.desc
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 873,
+                                                                    columnNumber: 27
+                                                                }, this)
+                                                            ]
+                                                        }, item.title, true, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 859,
+                                                            columnNumber: 25
+                                                        }, this))
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                    lineNumber: 857,
+                                                    columnNumber: 21
+                                                }, this)
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                lineNumber: 856,
+                                                columnNumber: 19
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    gap: 10,
+                                                    flexWrap: 'wrap',
+                                                    padding: '8px 10px',
+                                                    borderRadius: 8,
+                                                    background: '#f8fafc',
+                                                    border: '1px solid #e2e8f0'
+                                                },
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                            flexWrap: 'wrap',
+                                                            minWidth: 0
+                                                        },
+                                                        children: [
+                                                            (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                                style: {
+                                                                    margin: 0,
+                                                                    borderRadius: 6,
+                                                                    color: '#b45309',
+                                                                    background: '#fffbeb',
+                                                                    borderColor: '#fde68a'
+                                                                },
+                                                                children: [
+                                                                    (0, _jsxdevruntime.jsxDEV)(_icons.ThunderboltOutlined, {
+                                                                        style: {
+                                                                            marginRight: 4
+                                                                        }
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 894,
+                                                                        columnNumber: 25
+                                                                    }, this),
+                                                                    "风险主体种子 ",
+                                                                    seedFlowNodes.length,
+                                                                    " 个"
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 893,
+                                                                columnNumber: 23
+                                                            }, this),
+                                                            compactSeedNames.length > 0 && (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                type: "secondary",
+                                                                style: {
+                                                                    fontSize: 11
+                                                                },
+                                                                children: [
+                                                                    compactSeedNames.join('、'),
+                                                                    seedFlowNodes.length > compactSeedNames.length ? ` 等 ${seedFlowNodes.length} 个` : ''
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 898,
+                                                                columnNumber: 25
+                                                            }, this)
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 892,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 8,
+                                                            flexWrap: 'wrap'
+                                                        },
+                                                        children: [
+                                                            visibleCommunities.map((comm)=>{
+                                                                const cid = Number(comm.community_id ?? comm.id ?? 0);
+                                                                const color = COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length];
+                                                                const members = comm.members || comm.top_entities || [];
+                                                                const density = typeof comm.density === 'number' ? ` / 密度 ${comm.density.toFixed(2)}` : '';
+                                                                return (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                    style: {
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 5,
+                                                                        fontSize: 11,
+                                                                        color: '#475569'
                                                                     },
                                                                     children: [
-                                                                        "+",
-                                                                        comm.members.length - 15,
-                                                                        " 更多"
+                                                                        (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                            style: {
+                                                                                width: 9,
+                                                                                height: 9,
+                                                                                borderRadius: '50%',
+                                                                                background: color,
+                                                                                boxShadow: `0 0 0 3px ${color}18`
+                                                                            }
+                                                                        }, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 911,
+                                                                            columnNumber: 29
+                                                                        }, this),
+                                                                        "群体 #",
+                                                                        cid,
+                                                                        " · ",
+                                                                        comm.size || members.length,
+                                                                        " 成员",
+                                                                        density
                                                                     ]
-                                                                }, void 0, true, {
+                                                                }, cid, true, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 614,
-                                                                    columnNumber: 29
-                                                                }, this)
+                                                                    lineNumber: 910,
+                                                                    columnNumber: 27
+                                                                }, this);
+                                                            }),
+                                                            communities.length > visibleCommunities.length && (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                type: "secondary",
+                                                                style: {
+                                                                    fontSize: 11
+                                                                },
+                                                                children: [
+                                                                    "+",
+                                                                    communities.length - visibleCommunities.length,
+                                                                    " 个群体"
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 917,
+                                                                columnNumber: 25
+                                                            }, this)
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 903,
+                                                        columnNumber: 21
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                lineNumber: 879,
+                                                columnNumber: 19
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    minHeight: 430,
+                                                    borderRadius: 8,
+                                                    border: '1px solid #e2e8f0',
+                                                    background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+                                                    padding: 14,
+                                                    position: 'relative',
+                                                    overflow: 'hidden'
+                                                },
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            marginBottom: 8
+                                                        },
+                                                        children: [
+                                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                children: [
+                                                                    (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                        strong: true,
+                                                                        style: {
+                                                                            fontSize: 14,
+                                                                            display: 'block'
+                                                                        },
+                                                                        children: "群体发现子图"
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 935,
+                                                                        columnNumber: 25
+                                                                    }, this),
+                                                                    (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                        type: "secondary",
+                                                                        style: {
+                                                                            fontSize: 10
+                                                                        },
+                                                                        children: [
+                                                                            connectedSubgraphCounts.nodes || subgraphCounts.nodes,
+                                                                            " 节点 / ",
+                                                                            connectedSubgraphCounts.edges || subgraphCounts.edges,
+                                                                            " 关系",
+                                                                            communityPreviewGraph.nodes.length < (connectedSubgraphCounts.nodes || subgraphCounts.nodes) && ` · 当前展示前 ${communityPreviewGraph.nodes.length} 个代表节点`
+                                                                        ]
+                                                                    }, void 0, true, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 936,
+                                                                        columnNumber: 25
+                                                                    }, this)
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 934,
+                                                                columnNumber: 23
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
+                                                                size: 6,
+                                                                children: [
+                                                                    communityAlgorithm && (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                                        style: {
+                                                                            fontSize: 10,
+                                                                            margin: 0
+                                                                        },
+                                                                        children: [
+                                                                            "算法: ",
+                                                                            communityAlgorithm
+                                                                        ]
+                                                                    }, void 0, true, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 942,
+                                                                        columnNumber: 48
+                                                                    }, this),
+                                                                    Object.keys(communityNodePositions).length > 0 && (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                                                        size: "small",
+                                                                        type: "text",
+                                                                        icon: (0, _jsxdevruntime.jsxDEV)(_icons.ReloadOutlined, {}, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 947,
+                                                                            columnNumber: 35
+                                                                        }, void 0),
+                                                                        onClick: ()=>{
+                                                                            setCommunityNodePositions({});
+                                                                            setDraggingCommunityNodeId(null);
+                                                                        },
+                                                                        style: {
+                                                                            fontSize: 11,
+                                                                            height: 24,
+                                                                            padding: '0 6px'
+                                                                        },
+                                                                        children: "重置布局"
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 944,
+                                                                        columnNumber: 27
+                                                                    }, this)
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 941,
+                                                                columnNumber: 23
+                                                            }, this)
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 933,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            position: 'relative',
+                                                            height: 360,
+                                                            borderRadius: 8,
+                                                            background: '#ffffff',
+                                                            border: '1px solid #dbeafe',
+                                                            overflow: 'hidden'
+                                                        },
+                                                        children: communityPreviewGraph.nodes.length > 0 ? (0, _jsxdevruntime.jsxDEV)("svg", {
+                                                            viewBox: "0 0 100 100",
+                                                            preserveAspectRatio: "none",
+                                                            onPointerMove: handleCommunityGraphPointerMove,
+                                                            onPointerUp: stopCommunityGraphDrag,
+                                                            onPointerLeave: stopCommunityGraphDrag,
+                                                            style: {
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                display: 'block',
+                                                                cursor: draggingCommunityNodeId ? 'grabbing' : 'default',
+                                                                touchAction: 'none'
+                                                            },
+                                                            children: [
+                                                                (0, _jsxdevruntime.jsxDEV)("defs", {
+                                                                    children: (0, _jsxdevruntime.jsxDEV)("filter", {
+                                                                        id: "communityNodeShadow",
+                                                                        x: "-50%",
+                                                                        y: "-50%",
+                                                                        width: "200%",
+                                                                        height: "200%",
+                                                                        children: (0, _jsxdevruntime.jsxDEV)("feDropShadow", {
+                                                                            dx: "0",
+                                                                            dy: "1",
+                                                                            stdDeviation: "1.2",
+                                                                            floodColor: "#0f172a",
+                                                                            floodOpacity: "0.18"
+                                                                        }, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 977,
+                                                                            columnNumber: 31
+                                                                        }, this)
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 976,
+                                                                        columnNumber: 29
+                                                                    }, this)
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 975,
+                                                                    columnNumber: 27
+                                                                }, this),
+                                                                communityPreviewGraph.groups.map(([groupKey, groupNodes], groupIndex)=>{
+                                                                    if (groupKey === 'unknown' || !groupNodes.length) return null;
+                                                                    const color = COMMUNITY_PALETTE[Number(groupKey) % COMMUNITY_PALETTE.length];
+                                                                    const avgX = groupNodes.reduce((sum, node)=>sum + node.x, 0) / groupNodes.length;
+                                                                    const avgY = groupNodes.reduce((sum, node)=>sum + node.y, 0) / groupNodes.length;
+                                                                    const radius = Math.min(28, Math.max(12, 7 + groupNodes.length * 1.8));
+                                                                    return (0, _jsxdevruntime.jsxDEV)("circle", {
+                                                                        cx: avgX,
+                                                                        cy: avgY,
+                                                                        r: radius,
+                                                                        fill: `${color}10`,
+                                                                        stroke: `${color}35`,
+                                                                        strokeWidth: "0.5",
+                                                                        strokeDasharray: "2 1.5"
+                                                                    }, groupKey, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 987,
+                                                                        columnNumber: 31
+                                                                    }, this);
+                                                                }),
+                                                                communityPreviewGraph.edges.map((edge, index)=>(0, _jsxdevruntime.jsxDEV)("line", {
+                                                                        x1: edge.source.x,
+                                                                        y1: edge.source.y,
+                                                                        x2: edge.target.x,
+                                                                        y2: edge.target.y,
+                                                                        stroke: "#94a3b8",
+                                                                        strokeWidth: "0.42",
+                                                                        strokeOpacity: "0.55",
+                                                                        vectorEffect: "non-scaling-stroke",
+                                                                        children: (0, _jsxdevruntime.jsxDEV)("title", {
+                                                                            children: edge.relation || '关系'
+                                                                        }, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1011,
+                                                                            columnNumber: 31
+                                                                        }, this)
+                                                                    }, `${edge.id}-${index}`, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 1000,
+                                                                        columnNumber: 29
+                                                                    }, this)),
+                                                                communityPreviewGraph.nodes.map((node, index)=>{
+                                                                    const color = node.communityId !== undefined ? COMMUNITY_PALETTE[node.communityId % COMMUNITY_PALETTE.length] : _graphStyles.NODE_TYPE_COLORS[node.type] || '#64748b';
+                                                                    const showLabel = hoveredCommunityNodeId === node.id || draggingCommunityNodeId === node.id;
+                                                                    const label = node.name.length > 14 ? `${node.name.slice(0, 13)}...` : node.name;
+                                                                    const labelWidth = Math.max(18, Math.min(46, label.length * 3.1 + 6));
+                                                                    const labelX = Math.min(96 - labelWidth, Math.max(4, node.x + 2.8));
+                                                                    const labelY = Math.max(6, node.y - 6.2);
+                                                                    return (0, _jsxdevruntime.jsxDEV)("g", {
+                                                                        onPointerDown: (event)=>handleCommunityNodePointerDown(event, node.id),
+                                                                        onPointerUp: stopCommunityGraphDrag,
+                                                                        onPointerEnter: ()=>setHoveredCommunityNodeId(node.id),
+                                                                        onPointerLeave: ()=>setHoveredCommunityNodeId((current)=>current === node.id ? null : current),
+                                                                        style: {
+                                                                            cursor: draggingCommunityNodeId === node.id ? 'grabbing' : 'grab'
+                                                                        },
+                                                                        children: [
+                                                                            (0, _jsxdevruntime.jsxDEV)("title", {
+                                                                                children: `${node.name}${node.communityId !== undefined ? ` / 群体 #${node.communityId}` : ''}`
+                                                                            }, void 0, false, {
+                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                lineNumber: 1032,
+                                                                                columnNumber: 33
+                                                                            }, this),
+                                                                            node.isSeed && (0, _jsxdevruntime.jsxDEV)("circle", {
+                                                                                cx: node.x,
+                                                                                cy: node.y,
+                                                                                r: "2.7",
+                                                                                fill: "none",
+                                                                                stroke: "#f59e0b",
+                                                                                strokeWidth: "1",
+                                                                                vectorEffect: "non-scaling-stroke"
+                                                                            }, void 0, false, {
+                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                lineNumber: 1034,
+                                                                                columnNumber: 35
+                                                                            }, this),
+                                                                            (0, _jsxdevruntime.jsxDEV)("circle", {
+                                                                                cx: node.x,
+                                                                                cy: node.y,
+                                                                                r: node.isSeed ? 1.85 : 1.45,
+                                                                                fill: color,
+                                                                                stroke: "#ffffff",
+                                                                                strokeWidth: "0.7",
+                                                                                filter: "url(#communityNodeShadow)",
+                                                                                vectorEffect: "non-scaling-stroke"
+                                                                            }, void 0, false, {
+                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                lineNumber: 1044,
+                                                                                columnNumber: 33
+                                                                            }, this),
+                                                                            showLabel && (0, _jsxdevruntime.jsxDEV)("g", {
+                                                                                style: {
+                                                                                    pointerEvents: 'none'
+                                                                                },
+                                                                                children: [
+                                                                                    (0, _jsxdevruntime.jsxDEV)("rect", {
+                                                                                        x: labelX,
+                                                                                        y: labelY,
+                                                                                        width: labelWidth,
+                                                                                        height: "7.2",
+                                                                                        rx: "1.8",
+                                                                                        fill: "#ffffff",
+                                                                                        stroke: `${color}55`,
+                                                                                        strokeWidth: "0.45",
+                                                                                        vectorEffect: "non-scaling-stroke"
+                                                                                    }, void 0, false, {
+                                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                        lineNumber: 1056,
+                                                                                        columnNumber: 37
+                                                                                    }, this),
+                                                                                    (0, _jsxdevruntime.jsxDEV)("text", {
+                                                                                        x: labelX + 3,
+                                                                                        y: labelY + 4.9,
+                                                                                        fontSize: "2.65",
+                                                                                        fill: "#334155",
+                                                                                        children: label
+                                                                                    }, void 0, false, {
+                                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                        lineNumber: 1067,
+                                                                                        columnNumber: 37
+                                                                                    }, this)
+                                                                                ]
+                                                                            }, void 0, true, {
+                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                lineNumber: 1055,
+                                                                                columnNumber: 35
+                                                                            }, this)
+                                                                        ]
+                                                                    }, `${node.id}-${index}`, true, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 1024,
+                                                                        columnNumber: 31
+                                                                    }, this);
+                                                                })
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 602,
+                                                            lineNumber: 961,
+                                                            columnNumber: 25
+                                                        }, this) : (0, _jsxdevruntime.jsxDEV)("div", {
+                                                            style: {
+                                                                height: '100%',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            },
+                                                            children: (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                type: "secondary",
+                                                                style: {
+                                                                    fontSize: 12
+                                                                },
+                                                                children: "等待子图数据"
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1083,
+                                                                columnNumber: 27
+                                                            }, this)
+                                                        }, void 0, false, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 1082,
                                                             columnNumber: 25
                                                         }, this)
-                                                    ]
-                                                }, comm.community_id, true, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 580,
-                                                    columnNumber: 23
-                                                }, this);
-                                            })
-                                        }, void 0, false, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 578,
-                                            columnNumber: 19
-                                        }, this) : (0, _jsxdevruntime.jsxDEV)(Text, {
-                                            type: "secondary",
-                                            style: {
-                                                fontSize: 12
-                                            },
-                                            children: "当前子图规模较小，未检测到明显群体结构"
-                                        }, void 0, false, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 623,
-                                            columnNumber: 19
-                                        }, this),
-                                        (communityInfo === null || communityInfo === void 0 ? void 0 : communityInfo.algorithm) && (0, _jsxdevruntime.jsxDEV)(Text, {
-                                            type: "secondary",
-                                            style: {
-                                                fontSize: 10,
-                                                display: 'block',
-                                                marginTop: 8
-                                            },
-                                            children: [
-                                                "算法: ",
-                                                communityInfo.algorithm
-                                            ]
-                                        }, void 0, true, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 628,
-                                            columnNumber: 19
-                                        }, this)
-                                    ]
-                                }, void 0, true, {
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 959,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'flex',
+                                                            gap: 10,
+                                                            flexWrap: 'wrap',
+                                                            marginTop: 10,
+                                                            alignItems: 'center'
+                                                        },
+                                                        children: [
+                                                            seedFlowNodes.length > 0 && (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                style: {
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 5,
+                                                                    fontSize: 11,
+                                                                    color: '#475569'
+                                                                },
+                                                                children: [
+                                                                    (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                        style: {
+                                                                            width: 10,
+                                                                            height: 10,
+                                                                            borderRadius: '50%',
+                                                                            background: '#2563eb',
+                                                                            border: '2px solid #f59e0b'
+                                                                        }
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 1090,
+                                                                        columnNumber: 27
+                                                                    }, this),
+                                                                    "种子节点"
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1089,
+                                                                columnNumber: 25
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                type: "secondary",
+                                                                style: {
+                                                                    fontSize: 11
+                                                                },
+                                                                children: "节点可拖拽调整位置，悬浮显示名称；大规模子图默认抽样展示，避免成员列表刷屏。"
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1094,
+                                                                columnNumber: 23
+                                                            }, this)
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 1087,
+                                                        columnNumber: 21
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                lineNumber: 922,
+                                                columnNumber: 19
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                        lineNumber: 855,
+                                        columnNumber: 17
+                                    }, this)
+                                }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 561,
+                                    lineNumber: 839,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 560,
+                                lineNumber: 838,
                                 columnNumber: 13
                             }, this),
                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -5508,7 +9275,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 }
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 646,
+                                                lineNumber: 1114,
                                                 columnNumber: 23
                                             }, void 0),
                                             "风险传导路径 (",
@@ -5517,7 +9284,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 645,
+                                        lineNumber: 1113,
                                         columnNumber: 21
                                     }, void 0),
                                     extra: (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
@@ -5535,7 +9302,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 652,
+                                                lineNumber: 1120,
                                                 columnNumber: 23
                                             }, void 0),
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
@@ -5550,7 +9317,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 653,
+                                                lineNumber: 1121,
                                                 columnNumber: 23
                                             }, void 0),
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
@@ -5565,17 +9332,496 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 654,
+                                                lineNumber: 1122,
                                                 columnNumber: 23
                                             }, void 0)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 651,
+                                        lineNumber: 1119,
                                         columnNumber: 21
                                     }, void 0),
                                     children: [
                                         (0, _jsxdevruntime.jsxDEV)("div", {
+                                            style: {
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                gap: 10,
+                                                flexWrap: 'wrap',
+                                                marginBottom: 10
+                                            },
+                                            children: [
+                                                (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
+                                                    size: 0,
+                                                    style: {
+                                                        padding: 2,
+                                                        borderRadius: 8,
+                                                        background: '#f1f5f9',
+                                                        border: '1px solid #e2e8f0'
+                                                    },
+                                                    children: [
+                                                        (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                                            size: "small",
+                                                            type: riskPathMode === 'community' ? 'primary' : 'text',
+                                                            icon: (0, _jsxdevruntime.jsxDEV)(_icons.ClusterOutlined, {}, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1131,
+                                                                columnNumber: 31
+                                                            }, void 0),
+                                                            onClick: ()=>setRiskPathMode('community'),
+                                                            style: {
+                                                                borderRadius: 6,
+                                                                fontSize: 12
+                                                            },
+                                                            children: "群体间传导"
+                                                        }, void 0, false, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 1128,
+                                                            columnNumber: 23
+                                                        }, this),
+                                                        (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                                            size: "small",
+                                                            type: riskPathMode === 'node' ? 'primary' : 'text',
+                                                            icon: (0, _jsxdevruntime.jsxDEV)(_icons.NodeIndexOutlined, {}, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1140,
+                                                                columnNumber: 31
+                                                            }, void 0),
+                                                            onClick: ()=>setRiskPathMode('node'),
+                                                            style: {
+                                                                borderRadius: 6,
+                                                                fontSize: 12
+                                                            },
+                                                            children: "具体节点路径"
+                                                        }, void 0, false, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 1137,
+                                                            columnNumber: 23
+                                                        }, this)
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                    lineNumber: 1127,
+                                                    columnNumber: 21
+                                                }, this),
+                                                (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                    type: "secondary",
+                                                    style: {
+                                                        fontSize: 11
+                                                    },
+                                                    children: "群体视图看社区之间的风险扩散，节点视图看每条路径的实体链路"
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                    lineNumber: 1147,
+                                                    columnNumber: 21
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                            lineNumber: 1126,
+                                            columnNumber: 19
+                                        }, this),
+                                        riskPathMode === 'community' ? (0, _jsxdevruntime.jsxDEV)("div", {
+                                            style: {
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+                                                gap: 12
+                                            },
+                                            children: [
+                                                (0, _jsxdevruntime.jsxDEV)("div", {
+                                                    style: {
+                                                        border: '1px solid #e2e8f0',
+                                                        borderRadius: 8,
+                                                        background: '#ffffff',
+                                                        overflow: 'hidden'
+                                                    },
+                                                    children: [
+                                                        (0, _jsxdevruntime.jsxDEV)("div", {
+                                                            style: {
+                                                                padding: '10px 12px',
+                                                                borderBottom: '1px solid #e2e8f0',
+                                                                background: '#f8fafc'
+                                                            },
+                                                            children: [
+                                                                (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                    strong: true,
+                                                                    style: {
+                                                                        fontSize: 13
+                                                                    },
+                                                                    children: "群体社区之间的关系"
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 1156,
+                                                                    columnNumber: 27
+                                                                }, this),
+                                                                (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                    type: "secondary",
+                                                                    style: {
+                                                                        fontSize: 11,
+                                                                        display: 'block'
+                                                                    },
+                                                                    children: [
+                                                                        riskTransmissionGraph.nodes.length,
+                                                                        " 个群体 / ",
+                                                                        riskTransmissionGraph.edges.length,
+                                                                        " 条传导关系"
+                                                                    ]
+                                                                }, void 0, true, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 1157,
+                                                                    columnNumber: 27
+                                                                }, this)
+                                                            ]
+                                                        }, void 0, true, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 1155,
+                                                            columnNumber: 25
+                                                        }, this),
+                                                        (0, _jsxdevruntime.jsxDEV)("div", {
+                                                            style: {
+                                                                height: 260,
+                                                                position: 'relative'
+                                                            },
+                                                            children: riskTransmissionGraph.nodes.length > 0 ? (0, _jsxdevruntime.jsxDEV)("svg", {
+                                                                viewBox: "0 0 100 100",
+                                                                preserveAspectRatio: "none",
+                                                                style: {
+                                                                    width: '100%',
+                                                                    height: '100%',
+                                                                    display: 'block'
+                                                                },
+                                                                children: [
+                                                                    (0, _jsxdevruntime.jsxDEV)("defs", {
+                                                                        children: (0, _jsxdevruntime.jsxDEV)("marker", {
+                                                                            id: "riskArrow",
+                                                                            markerWidth: "8",
+                                                                            markerHeight: "8",
+                                                                            refX: "7",
+                                                                            refY: "4",
+                                                                            orient: "auto",
+                                                                            markerUnits: "strokeWidth",
+                                                                            children: (0, _jsxdevruntime.jsxDEV)("path", {
+                                                                                d: "M0,0 L8,4 L0,8 Z",
+                                                                                fill: "#64748b"
+                                                                            }, void 0, false, {
+                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                lineNumber: 1166,
+                                                                                columnNumber: 35
+                                                                            }, this)
+                                                                        }, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1165,
+                                                                            columnNumber: 33
+                                                                        }, this)
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 1164,
+                                                                        columnNumber: 31
+                                                                    }, this),
+                                                                    riskTransmissionGraph.edges.map((edge, index)=>{
+                                                                        const source = riskTransmissionGraph.nodes.find((node)=>node.id === edge.source);
+                                                                        const target = riskTransmissionGraph.nodes.find((node)=>node.id === edge.target);
+                                                                        if (!source || !target) return null;
+                                                                        return (0, _jsxdevruntime.jsxDEV)("line", {
+                                                                            x1: source.x,
+                                                                            y1: source.y,
+                                                                            x2: target.x,
+                                                                            y2: target.y,
+                                                                            stroke: RISK_LEVEL_COLORS[edge.level] || '#64748b',
+                                                                            strokeWidth: Math.min(2.8, 0.8 + edge.count * 0.45),
+                                                                            strokeOpacity: "0.72",
+                                                                            markerEnd: "url(#riskArrow)",
+                                                                            vectorEffect: "non-scaling-stroke",
+                                                                            children: (0, _jsxdevruntime.jsxDEV)("title", {
+                                                                                children: `${source.label} → ${target.label} / ${edge.count} 条路径`
+                                                                            }, void 0, false, {
+                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                lineNumber: 1186,
+                                                                                columnNumber: 37
+                                                                            }, this)
+                                                                        }, `${edge.source}-${edge.target}-${index}`, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1174,
+                                                                            columnNumber: 35
+                                                                        }, this);
+                                                                    }),
+                                                                    riskTransmissionGraph.nodes.map((node)=>{
+                                                                        const color = COMMUNITY_PALETTE[node.id % COMMUNITY_PALETTE.length];
+                                                                        const nodeRiskColor = node.highCount > 0 ? RISK_LEVEL_COLORS.high : node.mediumCount > 0 ? RISK_LEVEL_COLORS.medium : color;
+                                                                        return (0, _jsxdevruntime.jsxDEV)("g", {
+                                                                            children: [
+                                                                                (0, _jsxdevruntime.jsxDEV)("title", {
+                                                                                    children: `${node.label} / ${node.size} 成员 / ${node.pathCount} 条路径`
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1195,
+                                                                                    columnNumber: 37
+                                                                                }, this),
+                                                                                (0, _jsxdevruntime.jsxDEV)("circle", {
+                                                                                    cx: node.x,
+                                                                                    cy: node.y,
+                                                                                    r: "8.5",
+                                                                                    fill: `${color}18`,
+                                                                                    stroke: nodeRiskColor,
+                                                                                    strokeWidth: "1.4",
+                                                                                    vectorEffect: "non-scaling-stroke"
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1196,
+                                                                                    columnNumber: 37
+                                                                                }, this),
+                                                                                (0, _jsxdevruntime.jsxDEV)("circle", {
+                                                                                    cx: node.x,
+                                                                                    cy: node.y,
+                                                                                    r: "3.2",
+                                                                                    fill: color,
+                                                                                    stroke: "#ffffff",
+                                                                                    strokeWidth: "0.8",
+                                                                                    vectorEffect: "non-scaling-stroke"
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1197,
+                                                                                    columnNumber: 37
+                                                                                }, this),
+                                                                                (0, _jsxdevruntime.jsxDEV)("text", {
+                                                                                    x: node.x,
+                                                                                    y: node.y + 13,
+                                                                                    textAnchor: "middle",
+                                                                                    fontSize: "3.1",
+                                                                                    fill: "#334155",
+                                                                                    stroke: "#ffffff",
+                                                                                    strokeWidth: "0.65",
+                                                                                    paintOrder: "stroke",
+                                                                                    children: node.label
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1198,
+                                                                                    columnNumber: 37
+                                                                                }, this),
+                                                                                (0, _jsxdevruntime.jsxDEV)("text", {
+                                                                                    x: node.x,
+                                                                                    y: node.y + 17,
+                                                                                    textAnchor: "middle",
+                                                                                    fontSize: "2.4",
+                                                                                    fill: "#64748b",
+                                                                                    stroke: "#ffffff",
+                                                                                    strokeWidth: "0.5",
+                                                                                    paintOrder: "stroke",
+                                                                                    children: [
+                                                                                        node.size,
+                                                                                        " 成员"
+                                                                                    ]
+                                                                                }, void 0, true, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1201,
+                                                                                    columnNumber: 37
+                                                                                }, this)
+                                                                            ]
+                                                                        }, node.id, true, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1194,
+                                                                            columnNumber: 35
+                                                                        }, this);
+                                                                    })
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1163,
+                                                                columnNumber: 29
+                                                            }, this) : (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                style: {
+                                                                    height: '100%',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center'
+                                                                },
+                                                                children: (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                    type: "secondary",
+                                                                    style: {
+                                                                        fontSize: 12
+                                                                    },
+                                                                    children: "暂无可映射的群体传导关系"
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 1210,
+                                                                    columnNumber: 31
+                                                                }, this)
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1209,
+                                                                columnNumber: 29
+                                                            }, this)
+                                                        }, void 0, false, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 1161,
+                                                            columnNumber: 25
+                                                        }, this)
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                    lineNumber: 1154,
+                                                    columnNumber: 23
+                                                }, this),
+                                                (0, _jsxdevruntime.jsxDEV)("div", {
+                                                    style: {
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: 8
+                                                    },
+                                                    children: riskTransmissionGraph.pathRows.slice(0, showAllPaths ? riskTransmissionGraph.pathRows.length : 5).map(({ path, communitySequence })=>(0, _jsxdevruntime.jsxDEV)("div", {
+                                                            style: {
+                                                                padding: '10px 12px',
+                                                                borderRadius: 8,
+                                                                background: '#f8fafc',
+                                                                border: '1px solid #e2e8f0'
+                                                            },
+                                                            children: [
+                                                                (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                    style: {
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 6,
+                                                                        marginBottom: 6,
+                                                                        flexWrap: 'wrap'
+                                                                    },
+                                                                    children: [
+                                                                        (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                                            color: RISK_LEVEL_COLORS[path.risk_level],
+                                                                            style: {
+                                                                                fontSize: 10,
+                                                                                borderRadius: 4,
+                                                                                margin: 0
+                                                                            },
+                                                                            children: path.risk_level === 'high' ? '高风险' : path.risk_level === 'medium' ? '中风险' : '低风险'
+                                                                        }, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1220,
+                                                                            columnNumber: 31
+                                                                        }, this),
+                                                                        (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                            strong: true,
+                                                                            style: {
+                                                                                fontSize: 12
+                                                                            },
+                                                                            children: path.path_id
+                                                                        }, void 0, false, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1223,
+                                                                            columnNumber: 31
+                                                                        }, this),
+                                                                        path.confidence !== undefined && (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                                            style: {
+                                                                                fontSize: 10,
+                                                                                borderRadius: 4,
+                                                                                margin: 0
+                                                                            },
+                                                                            children: [
+                                                                                (path.confidence * 100).toFixed(0),
+                                                                                "%"
+                                                                            ]
+                                                                        }, void 0, true, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1225,
+                                                                            columnNumber: 33
+                                                                        }, this)
+                                                                    ]
+                                                                }, void 0, true, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 1219,
+                                                                    columnNumber: 29
+                                                                }, this),
+                                                                (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                    style: {
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 4,
+                                                                        flexWrap: 'wrap',
+                                                                        marginBottom: 6
+                                                                    },
+                                                                    children: communitySequence.length > 0 ? communitySequence.map((cid, idx)=>{
+                                                                        const color = COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length];
+                                                                        return (0, _jsxdevruntime.jsxDEV)(_react.default.Fragment, {
+                                                                            children: [
+                                                                                idx > 0 && (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                                    style: {
+                                                                                        color: '#94a3b8',
+                                                                                        fontSize: 11
+                                                                                    },
+                                                                                    children: "→"
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1233,
+                                                                                    columnNumber: 49
+                                                                                }, this),
+                                                                                (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                                                    style: {
+                                                                                        margin: 0,
+                                                                                        borderRadius: 6,
+                                                                                        fontSize: 11,
+                                                                                        color,
+                                                                                        background: `${color}10`,
+                                                                                        border: `1px solid ${color}40`
+                                                                                    },
+                                                                                    children: [
+                                                                                        "群体 #",
+                                                                                        cid
+                                                                                    ]
+                                                                                }, void 0, true, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1234,
+                                                                                    columnNumber: 37
+                                                                                }, this)
+                                                                            ]
+                                                                        }, `${path.path_id}-${cid}-${idx}`, true, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1232,
+                                                                            columnNumber: 35
+                                                                        }, this);
+                                                                    }) : (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                        type: "secondary",
+                                                                        style: {
+                                                                            fontSize: 11
+                                                                        },
+                                                                        children: "该路径暂未映射到群体"
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                        lineNumber: 1240,
+                                                                        columnNumber: 33
+                                                                    }, this)
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 1228,
+                                                                    columnNumber: 29
+                                                                }, this),
+                                                                (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                    style: {
+                                                                        fontSize: 12,
+                                                                        color: '#475569'
+                                                                    },
+                                                                    children: path.path_description
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                    lineNumber: 1243,
+                                                                    columnNumber: 29
+                                                                }, this)
+                                                            ]
+                                                        }, path.path_id, true, {
+                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                            lineNumber: 1218,
+                                                            columnNumber: 27
+                                                        }, this))
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                    lineNumber: 1216,
+                                                    columnNumber: 23
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                            lineNumber: 1153,
+                                            columnNumber: 21
+                                        }, this) : (0, _jsxdevruntime.jsxDEV)("div", {
                                             style: {
                                                 display: 'flex',
                                                 flexDirection: 'column',
@@ -5611,8 +9857,8 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                     children: path.risk_level === 'high' ? '高风险' : path.risk_level === 'medium' ? '中风险' : '低风险'
                                                                 }, void 0, false, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 670,
-                                                                    columnNumber: 27
+                                                                    lineNumber: 1261,
+                                                                    columnNumber: 29
                                                                 }, this),
                                                                 (0, _jsxdevruntime.jsxDEV)(Text, {
                                                                     strong: true,
@@ -5622,8 +9868,8 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                     children: path.path_id
                                                                 }, void 0, false, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 673,
-                                                                    columnNumber: 27
+                                                                    lineNumber: 1264,
+                                                                    columnNumber: 29
                                                                 }, this),
                                                                 path.confidence !== undefined && (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
                                                                     style: {
@@ -5641,16 +9887,16 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 675,
-                                                                    columnNumber: 29
+                                                                    lineNumber: 1266,
+                                                                    columnNumber: 31
                                                                 }, this),
                                                                 onJumpToGraph && ((_path_affected_entities = path.affected_entities) === null || _path_affected_entities === void 0 ? void 0 : _path_affected_entities.length) > 0 && (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
                                                                     size: "small",
                                                                     type: "link",
                                                                     icon: (0, _jsxdevruntime.jsxDEV)(_icons.EyeOutlined, {}, void 0, false, {
                                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 683,
-                                                                        columnNumber: 37
+                                                                        lineNumber: 1274,
+                                                                        columnNumber: 39
                                                                     }, void 0),
                                                                     style: {
                                                                         fontSize: 10,
@@ -5661,14 +9907,14 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                     children: "查看图谱"
                                                                 }, void 0, false, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 680,
-                                                                    columnNumber: 29
+                                                                    lineNumber: 1271,
+                                                                    columnNumber: 31
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 669,
-                                                            columnNumber: 25
+                                                            lineNumber: 1260,
+                                                            columnNumber: 27
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)(Text, {
                                                             style: {
@@ -5678,62 +9924,110 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                             children: path.path_description
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 691,
-                                                            columnNumber: 25
+                                                            lineNumber: 1282,
+                                                            columnNumber: 27
                                                         }, this),
                                                         path.affected_entities && path.affected_entities.length > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
                                                             style: {
-                                                                marginTop: 4,
-                                                                display: 'flex',
-                                                                gap: 4,
-                                                                flexWrap: 'wrap'
+                                                                marginTop: 8,
+                                                                overflowX: 'auto',
+                                                                paddingBottom: 4
                                                             },
-                                                            children: [
-                                                                path.affected_entities.slice(0, 8).map((e)=>(0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                            children: (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                style: {
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 6,
+                                                                    minWidth: 'max-content'
+                                                                },
+                                                                children: [
+                                                                    path.affected_entities.slice(0, 12).map((entity, idx)=>{
+                                                                        const etype = inferClientEntityType(entity);
+                                                                        const color = _graphStyles.NODE_TYPE_COLORS[etype] || '#8c8c8c';
+                                                                        const label = _graphStyles.NODE_TYPE_LABELS[etype] || etype;
+                                                                        return (0, _jsxdevruntime.jsxDEV)(_react.default.Fragment, {
+                                                                            children: [
+                                                                                idx > 0 && (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                                    style: {
+                                                                                        color: '#94a3b8',
+                                                                                        fontSize: 14
+                                                                                    },
+                                                                                    children: "→"
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1292,
+                                                                                    columnNumber: 51
+                                                                                }, this),
+                                                                                (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
+                                                                                    title: `${label}: ${entity}`,
+                                                                                    children: (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                                                                                        style: {
+                                                                                            fontSize: 11,
+                                                                                            borderRadius: 16,
+                                                                                            cursor: onJumpToGraph ? 'pointer' : 'default',
+                                                                                            border: `1px solid ${color}40`,
+                                                                                            background: `${color}10`,
+                                                                                            color,
+                                                                                            margin: 0,
+                                                                                            padding: '3px 9px'
+                                                                                        },
+                                                                                        onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(entity, entity, etype),
+                                                                                        children: entity.length > 14 ? entity.slice(0, 12) + '...' : entity
+                                                                                    }, void 0, false, {
+                                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                        lineNumber: 1294,
+                                                                                        columnNumber: 41
+                                                                                    }, this)
+                                                                                }, void 0, false, {
+                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                                    lineNumber: 1293,
+                                                                                    columnNumber: 39
+                                                                                }, this)
+                                                                            ]
+                                                                        }, entity, true, {
+                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                            lineNumber: 1291,
+                                                                            columnNumber: 37
+                                                                        }, this);
+                                                                    }),
+                                                                    path.affected_entities.length > 12 && (0, _jsxdevruntime.jsxDEV)(Text, {
+                                                                        type: "secondary",
                                                                         style: {
                                                                             fontSize: 10,
-                                                                            borderRadius: 4,
-                                                                            cursor: onJumpToGraph ? 'pointer' : 'default'
+                                                                            marginLeft: 4
                                                                         },
-                                                                        onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(e, e, 'Entity'),
-                                                                        children: e
-                                                                    }, e, false, {
+                                                                        children: [
+                                                                            "+",
+                                                                            path.affected_entities.length - 12,
+                                                                            " 更多"
+                                                                        ]
+                                                                    }, void 0, true, {
                                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 695,
-                                                                        columnNumber: 31
-                                                                    }, this)),
-                                                                path.affected_entities.length > 8 && (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                    type: "secondary",
-                                                                    style: {
-                                                                        fontSize: 10
-                                                                    },
-                                                                    children: [
-                                                                        "+",
-                                                                        path.affected_entities.length - 8,
-                                                                        " 更多"
-                                                                    ]
-                                                                }, void 0, true, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 704,
-                                                                    columnNumber: 31
-                                                                }, this)
-                                                            ]
-                                                        }, void 0, true, {
+                                                                        lineNumber: 1309,
+                                                                        columnNumber: 35
+                                                                    }, this)
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                                lineNumber: 1285,
+                                                                columnNumber: 31
+                                                            }, this)
+                                                        }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 693,
-                                                            columnNumber: 27
+                                                            lineNumber: 1284,
+                                                            columnNumber: 29
                                                         }, this)
                                                     ]
                                                 }, path.path_id, true, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 660,
-                                                    columnNumber: 23
+                                                    lineNumber: 1251,
+                                                    columnNumber: 25
                                                 }, this);
                                             })
                                         }, void 0, false, {
                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 658,
-                                            columnNumber: 19
+                                            lineNumber: 1249,
+                                            columnNumber: 21
                                         }, this),
                                         sortedPaths.length > 5 && (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
                                             type: "link",
@@ -5746,13 +10040,13 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                             children: showAllPaths ? '收起，仅显示前 5 条' : `展开全部 ${sortedPaths.length} 条路径`
                                         }, void 0, false, {
                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 712,
+                                            lineNumber: 1319,
                                             columnNumber: 21
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 638,
+                                    lineNumber: 1106,
                                     columnNumber: 17
                                 }, this) : (0, _jsxdevruntime.jsxDEV)(_antd.Card, {
                                     size: "small",
@@ -5771,14 +10065,14 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 }
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 728,
+                                                lineNumber: 1335,
                                                 columnNumber: 23
                                             }, void 0),
                                             "风险传导路径"
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 727,
+                                        lineNumber: 1334,
                                         columnNumber: 21
                                     }, void 0),
                                     children: (0, _jsxdevruntime.jsxDEV)(Text, {
@@ -5786,20 +10080,20 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                         style: {
                                             fontSize: 12
                                         },
-                                        children: "未检测到风险传导路径"
+                                        children: isLoading ? '风险路径分析进行中...' : '未检测到风险传导路径'
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 733,
+                                        lineNumber: 1340,
                                         columnNumber: 19
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 723,
+                                    lineNumber: 1330,
                                     columnNumber: 17
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 636,
+                                lineNumber: 1104,
                                 columnNumber: 13
                             }, this),
                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -5827,14 +10121,14 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 }
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 750,
+                                                lineNumber: 1359,
                                                 columnNumber: 21
                                             }, void 0),
-                                            "综合风险报告"
+                                            "协同治理社区报告"
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 749,
+                                        lineNumber: 1358,
                                         columnNumber: 19
                                     }, void 0),
                                     extra: (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
@@ -5847,18 +10141,18 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                     size: "small",
                                                     icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileMarkdownOutlined, {}, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 757,
+                                                        lineNumber: 1366,
                                                         columnNumber: 50
                                                     }, void 0),
                                                     onClick: handleExportMD
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 757,
+                                                    lineNumber: 1366,
                                                     columnNumber: 23
                                                 }, void 0)
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 756,
+                                                lineNumber: 1365,
                                                 columnNumber: 21
                                             }, void 0),
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
@@ -5867,18 +10161,18 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                     size: "small",
                                                     icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileWordOutlined, {}, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 760,
+                                                        lineNumber: 1369,
                                                         columnNumber: 50
                                                     }, void 0),
                                                     onClick: handleExportWord
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 760,
+                                                    lineNumber: 1369,
                                                     columnNumber: 23
                                                 }, void 0)
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 759,
+                                                lineNumber: 1368,
                                                 columnNumber: 21
                                             }, void 0),
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
@@ -5887,24 +10181,24 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                     size: "small",
                                                     icon: (0, _jsxdevruntime.jsxDEV)(_icons.FilePdfOutlined, {}, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 763,
+                                                        lineNumber: 1372,
                                                         columnNumber: 50
                                                     }, void 0),
                                                     onClick: handleExportPDF
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 763,
+                                                    lineNumber: 1372,
                                                     columnNumber: 23
                                                 }, void 0)
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 762,
+                                                lineNumber: 1371,
                                                 columnNumber: 21
                                             }, void 0)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 755,
+                                        lineNumber: 1364,
                                         columnNumber: 19
                                     }, void 0),
                                     children: [
@@ -5917,439 +10211,71 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 gap: 12,
                                                 marginBottom: 12
                                             },
-                                            children: [
-                                                (0, _jsxdevruntime.jsxDEV)("div", {
-                                                    style: {
-                                                        flex: 1,
-                                                        minWidth: 200
-                                                    },
-                                                    children: [
-                                                        (0, _jsxdevruntime.jsxDEV)(Title, {
-                                                            level: 5,
-                                                            style: {
-                                                                margin: '0 0 8px',
-                                                                fontSize: 15
-                                                            },
-                                                            children: [
-                                                                (0, _jsxdevruntime.jsxDEV)(_icons.ThunderboltOutlined, {
-                                                                    style: {
-                                                                        marginRight: 8,
-                                                                        color: '#FFC101'
-                                                                    }
-                                                                }, void 0, false, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 772,
-                                                                    columnNumber: 23
-                                                                }, this),
-                                                                "执行摘要"
-                                                            ]
-                                                        }, void 0, true, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 771,
-                                                            columnNumber: 21
-                                                        }, this),
-                                                        (0, _jsxdevruntime.jsxDEV)(Paragraph, {
-                                                            ellipsis: {
-                                                                rows: 3,
-                                                                expandable: true
-                                                            },
-                                                            style: {
-                                                                color: '#475569',
-                                                                fontSize: 13,
-                                                                marginBottom: 0
-                                                            },
-                                                            children: report.executive_summary
-                                                        }, void 0, false, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 775,
-                                                            columnNumber: 21
-                                                        }, this)
-                                                    ]
-                                                }, void 0, true, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 770,
-                                                    columnNumber: 19
-                                                }, this),
-                                                (0, _jsxdevruntime.jsxDEV)("div", {
-                                                    style: {
-                                                        textAlign: 'center',
-                                                        flexShrink: 0
-                                                    },
-                                                    children: (0, _jsxdevruntime.jsxDEV)("div", {
+                                            children: (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    flex: 1,
+                                                    minWidth: 200
+                                                },
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)(Title, {
+                                                        level: 5,
                                                         style: {
-                                                            display: 'inline-block',
-                                                            padding: '10px 20px',
-                                                            borderRadius: 12,
-                                                            background: RISK_LEVEL_BG[report.overall_risk_level] || RISK_LEVEL_BG.medium,
-                                                            border: `2px solid ${RISK_LEVEL_COLORS[report.overall_risk_level] || RISK_LEVEL_COLORS.medium}`
+                                                            margin: '0 0 8px',
+                                                            fontSize: 15
                                                         },
                                                         children: [
-                                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                            (0, _jsxdevruntime.jsxDEV)(_icons.ThunderboltOutlined, {
                                                                 style: {
-                                                                    fontSize: 28,
-                                                                    fontWeight: 800,
-                                                                    color: RISK_LEVEL_COLORS[report.overall_risk_level] || RISK_LEVEL_COLORS.medium,
-                                                                    lineHeight: 1
-                                                                },
-                                                                children: RISK_LEVEL_LABELS[report.overall_risk_level] || '中风险'
+                                                                    marginRight: 8,
+                                                                    color: '#FFC101'
+                                                                }
                                                             }, void 0, false, {
                                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 792,
+                                                                lineNumber: 1380,
                                                                 columnNumber: 23
                                                             }, this),
-                                                            (0, _jsxdevruntime.jsxDEV)("div", {
-                                                                style: {
-                                                                    fontSize: 20,
-                                                                    fontWeight: 700,
-                                                                    color: '#1e293b',
-                                                                    marginTop: 4
-                                                                },
-                                                                children: [
-                                                                    riskScore,
-                                                                    (0, _jsxdevruntime.jsxDEV)("span", {
-                                                                        style: {
-                                                                            fontSize: 12,
-                                                                            fontWeight: 400,
-                                                                            color: '#94a3b8'
-                                                                        },
-                                                                        children: "/100"
-                                                                    }, void 0, false, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 804,
-                                                                        columnNumber: 25
-                                                                    }, this)
-                                                                ]
-                                                            }, void 0, true, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 802,
-                                                                columnNumber: 23
-                                                            }, this)
+                                                            "社区治理结论"
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 783,
+                                                        lineNumber: 1379,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    (0, _jsxdevruntime.jsxDEV)(Paragraph, {
+                                                        ellipsis: {
+                                                            rows: 4,
+                                                            expandable: true
+                                                        },
+                                                        style: {
+                                                            color: '#475569',
+                                                            fontSize: 13,
+                                                            marginBottom: 0
+                                                        },
+                                                        children: report.executive_summary
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                        lineNumber: 1383,
                                                         columnNumber: 21
                                                     }, this)
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 782,
-                                                    columnNumber: 19
-                                                }, this)
-                                            ]
-                                        }, void 0, true, {
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
+                                                lineNumber: 1378,
+                                                columnNumber: 19
+                                            }, this)
+                                        }, void 0, false, {
                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 769,
+                                            lineNumber: 1377,
                                             columnNumber: 17
-                                        }, this),
-                                        report.anomaly_findings && report.anomaly_findings.length > 0 && (0, _jsxdevruntime.jsxDEV)(_antd.Collapse, {
-                                            size: "small",
-                                            ghost: true,
-                                            style: {
-                                                marginBottom: 8
-                                            },
-                                            items: [
-                                                {
-                                                    key: 'anomalies',
-                                                    label: (0, _jsxdevruntime.jsxDEV)("span", {
-                                                        style: {
-                                                            fontSize: 12
-                                                        },
-                                                        children: [
-                                                            (0, _jsxdevruntime.jsxDEV)(_icons.BulbOutlined, {
-                                                                style: {
-                                                                    marginRight: 6,
-                                                                    color: '#FF8C00'
-                                                                }
-                                                            }, void 0, false, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 820,
-                                                                columnNumber: 27
-                                                            }, void 0),
-                                                            "异常发现 (",
-                                                            report.anomaly_findings.length,
-                                                            ")"
-                                                        ]
-                                                    }, void 0, true, {
-                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 819,
-                                                        columnNumber: 25
-                                                    }, void 0),
-                                                    children: (0, _jsxdevruntime.jsxDEV)("div", {
-                                                        style: {
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: 8
-                                                        },
-                                                        children: report.anomaly_findings.map((anomaly, idx)=>(0, _jsxdevruntime.jsxDEV)("div", {
-                                                                style: {
-                                                                    padding: '8px 12px',
-                                                                    background: '#fffbeb',
-                                                                    borderRadius: 6,
-                                                                    border: '1px solid #fef3c7'
-                                                                },
-                                                                children: [
-                                                                    (0, _jsxdevruntime.jsxDEV)("div", {
-                                                                        style: {
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: 8,
-                                                                            marginBottom: 4,
-                                                                            flexWrap: 'wrap'
-                                                                        },
-                                                                        children: [
-                                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                                strong: true,
-                                                                                style: {
-                                                                                    fontSize: 12
-                                                                                },
-                                                                                children: anomaly.anomaly_type
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 829,
-                                                                                columnNumber: 33
-                                                                            }, void 0),
-                                                                            (0, _jsxdevruntime.jsxDEV)(_antd.Progress, {
-                                                                                percent: Math.round((anomaly.confidence || 0) * 100),
-                                                                                size: "small",
-                                                                                style: {
-                                                                                    width: 100,
-                                                                                    margin: 0
-                                                                                },
-                                                                                strokeColor: (anomaly.confidence || 0) > 0.8 ? '#52c41a' : (anomaly.confidence || 0) > 0.5 ? '#fa8c16' : '#f5222d'
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 830,
-                                                                                columnNumber: 33
-                                                                            }, void 0)
-                                                                        ]
-                                                                    }, void 0, true, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 828,
-                                                                        columnNumber: 31
-                                                                    }, void 0),
-                                                                    (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                        style: {
-                                                                            fontSize: 11,
-                                                                            color: '#64748b',
-                                                                            display: 'block'
-                                                                        },
-                                                                        children: anomaly.evidence
-                                                                    }, void 0, false, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 837,
-                                                                        columnNumber: 31
-                                                                    }, void 0),
-                                                                    anomaly.affected_entities && anomaly.affected_entities.length > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
-                                                                        style: {
-                                                                            marginTop: 4,
-                                                                            display: 'flex',
-                                                                            gap: 4,
-                                                                            flexWrap: 'wrap'
-                                                                        },
-                                                                        children: [
-                                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                                type: "secondary",
-                                                                                style: {
-                                                                                    fontSize: 10
-                                                                                },
-                                                                                children: "涉及: "
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 840,
-                                                                                columnNumber: 35
-                                                                            }, void 0),
-                                                                            anomaly.affected_entities.map((e)=>(0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                                    style: {
-                                                                                        fontSize: 10,
-                                                                                        borderRadius: 4,
-                                                                                        cursor: onJumpToGraph ? 'pointer' : 'default'
-                                                                                    },
-                                                                                    onClick: ()=>onJumpToGraph === null || onJumpToGraph === void 0 ? void 0 : onJumpToGraph(e, e, 'Entity'),
-                                                                                    children: e
-                                                                                }, e, false, {
-                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                    lineNumber: 842,
-                                                                                    columnNumber: 37
-                                                                                }, void 0))
-                                                                        ]
-                                                                    }, void 0, true, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 839,
-                                                                        columnNumber: 33
-                                                                    }, void 0)
-                                                                ]
-                                                            }, idx, true, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 827,
-                                                                columnNumber: 29
-                                                            }, void 0))
-                                                    }, void 0, false, {
-                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 825,
-                                                        columnNumber: 25
-                                                    }, void 0)
-                                                }
-                                            ]
-                                        }, void 0, false, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 812,
-                                            columnNumber: 19
-                                        }, this),
-                                        report.compliance_matches && report.compliance_matches.length > 0 && (0, _jsxdevruntime.jsxDEV)(_antd.Collapse, {
-                                            size: "small",
-                                            ghost: true,
-                                            style: {
-                                                marginBottom: 8
-                                            },
-                                            items: [
-                                                {
-                                                    key: 'compliance',
-                                                    label: (0, _jsxdevruntime.jsxDEV)("span", {
-                                                        style: {
-                                                            fontSize: 12
-                                                        },
-                                                        children: [
-                                                            (0, _jsxdevruntime.jsxDEV)(_icons.SafetyOutlined, {
-                                                                style: {
-                                                                    marginRight: 6,
-                                                                    color: '#722ed1'
-                                                                }
-                                                            }, void 0, false, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 866,
-                                                                columnNumber: 27
-                                                            }, void 0),
-                                                            "合规匹配 (",
-                                                            report.compliance_matches.length,
-                                                            ")"
-                                                        ]
-                                                    }, void 0, true, {
-                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 865,
-                                                        columnNumber: 25
-                                                    }, void 0),
-                                                    children: (0, _jsxdevruntime.jsxDEV)("div", {
-                                                        style: {
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: 8
-                                                        },
-                                                        children: report.compliance_matches.map((match, idx)=>(0, _jsxdevruntime.jsxDEV)("div", {
-                                                                style: {
-                                                                    padding: '8px 12px',
-                                                                    background: '#faf5ff',
-                                                                    borderRadius: 6,
-                                                                    border: '1px solid #f3e8ff'
-                                                                },
-                                                                children: [
-                                                                    (0, _jsxdevruntime.jsxDEV)("div", {
-                                                                        style: {
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: 6,
-                                                                            marginBottom: 4,
-                                                                            flexWrap: 'wrap'
-                                                                        },
-                                                                        children: [
-                                                                            (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                                strong: true,
-                                                                                style: {
-                                                                                    fontSize: 12
-                                                                                },
-                                                                                children: match.regulation
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 875,
-                                                                                columnNumber: 33
-                                                                            }, void 0),
-                                                                            match.article && (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                                color: "purple",
-                                                                                style: {
-                                                                                    fontSize: 10,
-                                                                                    borderRadius: 4,
-                                                                                    margin: 0
-                                                                                },
-                                                                                children: match.article
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 876,
-                                                                                columnNumber: 51
-                                                                            }, void 0),
-                                                                            match.confidence !== undefined && (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                                style: {
-                                                                                    fontSize: 10,
-                                                                                    borderRadius: 4,
-                                                                                    margin: 0,
-                                                                                    background: '#f0f5ff',
-                                                                                    border: '1px solid #d6e4ff',
-                                                                                    color: '#2855D1'
-                                                                                },
-                                                                                children: [
-                                                                                    (match.confidence * 100).toFixed(0),
-                                                                                    "%"
-                                                                                ]
-                                                                            }, void 0, true, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 878,
-                                                                                columnNumber: 35
-                                                                            }, void 0),
-                                                                            (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
-                                                                                color: "#722ed1",
-                                                                                style: {
-                                                                                    fontSize: 10,
-                                                                                    borderRadius: 4,
-                                                                                    margin: 0
-                                                                                },
-                                                                                children: match.suggested_action
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 882,
-                                                                                columnNumber: 33
-                                                                            }, void 0)
-                                                                        ]
-                                                                    }, void 0, true, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 874,
-                                                                        columnNumber: 31
-                                                                    }, void 0),
-                                                                    (0, _jsxdevruntime.jsxDEV)(Text, {
-                                                                        style: {
-                                                                            fontSize: 11,
-                                                                            color: '#64748b',
-                                                                            display: 'block'
-                                                                        },
-                                                                        children: match.violation
-                                                                    }, void 0, false, {
-                                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                        lineNumber: 884,
-                                                                        columnNumber: 31
-                                                                    }, void 0)
-                                                                ]
-                                                            }, idx, true, {
-                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                lineNumber: 873,
-                                                                columnNumber: 29
-                                                            }, void 0))
-                                                    }, void 0, false, {
-                                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                        lineNumber: 871,
-                                                        columnNumber: 25
-                                                    }, void 0)
-                                                }
-                                            ]
-                                        }, void 0, false, {
-                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 858,
-                                            columnNumber: 19
                                         }, this),
                                         report.integrated_report || report.markdown_report ? (0, _jsxdevruntime.jsxDEV)("div", {
                                             className: "markdown-report",
                                             style: {
                                                 fontSize: 13,
-                                                lineHeight: 1.7,
+                                                lineHeight: 1.75,
                                                 color: '#334155',
                                                 marginTop: 12,
-                                                padding: '12px 16px',
+                                                padding: '14px 16px',
                                                 background: '#f8fafc',
                                                 borderRadius: 8
                                             },
@@ -6357,15 +10283,15 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 children: report.integrated_report || report.markdown_report
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 896,
+                                                lineNumber: 1394,
                                                 columnNumber: 21
                                             }, this)
                                         }, void 0, false, {
                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 895,
+                                            lineNumber: 1393,
                                             columnNumber: 19
                                         }, this) : null,
-                                        sortedRecommendations.length > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
+                                        (governancePlan === null || governancePlan === void 0 ? void 0 : governancePlan.actions) && governancePlan.actions.length > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
                                             style: {
                                                 marginTop: 12
                                             },
@@ -6377,42 +10303,29 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                         display: 'block',
                                                         marginBottom: 8
                                                     },
-                                                    children: "建议措施"
+                                                    children: "协同处置动作"
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 903,
+                                                    lineNumber: 1400,
                                                     columnNumber: 21
                                                 }, this),
                                                 (0, _jsxdevruntime.jsxDEV)("div", {
                                                     style: {
                                                         display: 'flex',
                                                         flexDirection: 'column',
-                                                        gap: 8
+                                                        gap: 6
                                                     },
-                                                    children: sortedRecommendations.map((rec, idx)=>{
-                                                        const urgency = URGENCY_TAGS[rec.urgency] || URGENCY_TAGS.normal;
-                                                        const trendIcon = rec.urgency === 'urgent' ? (0, _jsxdevruntime.jsxDEV)(_icons.RiseOutlined, {}, void 0, false, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 907,
-                                                            columnNumber: 70
-                                                        }, this) : rec.urgency === 'low' ? (0, _jsxdevruntime.jsxDEV)(_icons.FallOutlined, {}, void 0, false, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 907,
-                                                            columnNumber: 113
-                                                        }, this) : (0, _jsxdevruntime.jsxDEV)(_icons.MinusOutlined, {}, void 0, false, {
-                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 907,
-                                                            columnNumber: 132
-                                                        }, this);
+                                                    children: governancePlan.actions.slice(0, 4).map((action, idx)=>{
+                                                        const urgency = URGENCY_TAGS[action.priority] || URGENCY_TAGS.normal;
                                                         return (0, _jsxdevruntime.jsxDEV)("div", {
                                                             style: {
                                                                 display: 'flex',
                                                                 alignItems: 'flex-start',
                                                                 gap: 8,
                                                                 padding: '8px 12px',
-                                                                background: rec.urgency === 'urgent' ? '#fff2f0' : '#f8fafc',
+                                                                background: action.priority === 'urgent' ? '#fff2f0' : '#f8fafc',
                                                                 borderRadius: 6,
-                                                                border: rec.urgency === 'urgent' ? '1px solid #ffccc7' : '1px solid transparent'
+                                                                border: action.priority === 'urgent' ? '1px solid #ffccc7' : '1px solid #e2e8f0'
                                                             },
                                                             children: [
                                                                 (0, _jsxdevruntime.jsxDEV)("span", {
@@ -6427,7 +10340,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                     children: idx + 1
                                                                 }, void 0, false, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 921,
+                                                                    lineNumber: 1417,
                                                                     columnNumber: 29
                                                                 }, this),
                                                                 (0, _jsxdevruntime.jsxDEV)("div", {
@@ -6440,10 +10353,10 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                             style: {
                                                                                 fontSize: 12
                                                                             },
-                                                                            children: rec.action
+                                                                            children: action.measure
                                                                         }, void 0, false, {
                                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                            lineNumber: 925,
+                                                                            lineNumber: 1421,
                                                                             columnNumber: 31
                                                                         }, this),
                                                                         (0, _jsxdevruntime.jsxDEV)(Text, {
@@ -6452,10 +10365,14 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                                 color: '#94a3b8',
                                                                                 display: 'block'
                                                                             },
-                                                                            children: rec.reasoning
-                                                                        }, void 0, false, {
+                                                                            children: [
+                                                                                action.target,
+                                                                                " · ",
+                                                                                action.risk_issue
+                                                                            ]
+                                                                        }, void 0, true, {
                                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                            lineNumber: 926,
+                                                                            lineNumber: 1422,
                                                                             columnNumber: 31
                                                                         }, this),
                                                                         (0, _jsxdevruntime.jsxDEV)("div", {
@@ -6473,14 +10390,10 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                                         fontSize: 10,
                                                                                         margin: 0
                                                                                     },
-                                                                                    children: [
-                                                                                        trendIcon,
-                                                                                        " ",
-                                                                                        urgency.label
-                                                                                    ]
-                                                                                }, void 0, true, {
+                                                                                    children: urgency.label
+                                                                                }, void 0, false, {
                                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                    lineNumber: 928,
+                                                                                    lineNumber: 1426,
                                                                                     columnNumber: 33
                                                                                 }, this),
                                                                                 (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
@@ -6489,115 +10402,51 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                                                         fontSize: 10,
                                                                                         margin: 0
                                                                                     },
-                                                                                    children: rec.department
+                                                                                    children: action.department
                                                                                 }, void 0, false, {
                                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                    lineNumber: 931,
+                                                                                    lineNumber: 1429,
                                                                                     columnNumber: 33
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                            lineNumber: 927,
+                                                                            lineNumber: 1425,
                                                                             columnNumber: 31
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 924,
-                                                                    columnNumber: 29
-                                                                }, this),
-                                                                (0, _jsxdevruntime.jsxDEV)(_antd.Space, {
-                                                                    size: 4,
-                                                                    className: "no-print",
-                                                                    children: [
-                                                                        onAddMonitor && (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
-                                                                            title: "加入监控",
-                                                                            children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                                                                size: "small",
-                                                                                type: "primary",
-                                                                                ghost: true,
-                                                                                icon: (0, _jsxdevruntime.jsxDEV)(_icons.PlusOutlined, {}, void 0, false, {
-                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                    lineNumber: 937,
-                                                                                    columnNumber: 83
-                                                                                }, void 0),
-                                                                                style: {
-                                                                                    fontSize: 10,
-                                                                                    height: 24,
-                                                                                    padding: '0 8px'
-                                                                                },
-                                                                                onClick: ()=>onAddMonitor(rec.action, rec.department),
-                                                                                children: "监控"
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 937,
-                                                                                columnNumber: 35
-                                                                            }, this)
-                                                                        }, void 0, false, {
-                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                            lineNumber: 936,
-                                                                            columnNumber: 33
-                                                                        }, this),
-                                                                        onGenerateTicket && (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
-                                                                            title: "生成工单",
-                                                                            children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                                                                size: "small",
-                                                                                icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {}, void 0, false, {
-                                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                    lineNumber: 944,
-                                                                                    columnNumber: 62
-                                                                                }, void 0),
-                                                                                style: {
-                                                                                    fontSize: 10,
-                                                                                    height: 24,
-                                                                                    padding: '0 8px'
-                                                                                },
-                                                                                onClick: ()=>onGenerateTicket(rec),
-                                                                                children: "工单"
-                                                                            }, void 0, false, {
-                                                                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                                lineNumber: 944,
-                                                                                columnNumber: 35
-                                                                            }, this)
-                                                                        }, void 0, false, {
-                                                                            fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                            lineNumber: 943,
-                                                                            columnNumber: 33
-                                                                        }, this)
-                                                                    ]
-                                                                }, void 0, true, {
-                                                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                                    lineNumber: 934,
+                                                                    lineNumber: 1420,
                                                                     columnNumber: 29
                                                                 }, this)
                                                             ]
                                                         }, idx, true, {
                                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                            lineNumber: 909,
+                                                            lineNumber: 1405,
                                                             columnNumber: 27
                                                         }, this);
                                                     })
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                    lineNumber: 904,
+                                                    lineNumber: 1401,
                                                     columnNumber: 21
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                            lineNumber: 902,
+                                            lineNumber: 1399,
                                             columnNumber: 19
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 740,
+                                    lineNumber: 1349,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 739,
+                                lineNumber: 1348,
                                 columnNumber: 13
                             }, this),
                             error && report && (0, _jsxdevruntime.jsxDEV)(_antd.Card, {
@@ -6618,144 +10467,20 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                     ]
                                 }, void 0, true, {
                                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 962,
+                                    lineNumber: 1444,
                                     columnNumber: 17
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 961,
+                                lineNumber: 1443,
                                 columnNumber: 15
                             }, this)
                         ]
-                    }, void 0, true),
-                    report && (0, _jsxdevruntime.jsxDEV)("div", {
-                        className: "no-print",
-                        style: {
-                            position: 'fixed',
-                            right: 24,
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 4,
-                            zIndex: 100,
-                            background: 'rgba(255,255,255,0.95)',
-                            borderRadius: 10,
-                            padding: '6px',
-                            boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-                            border: '1px solid #e2e8f0'
-                        },
-                        children: [
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
-                                title: "实体统计",
-                                placement: "left",
-                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                    size: "small",
-                                    type: "text",
-                                    icon: (0, _jsxdevruntime.jsxDEV)(_icons.TeamOutlined, {}, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 992,
-                                        columnNumber: 23
-                                    }, void 0),
-                                    onClick: ()=>scrollToSection('entity-stats'),
-                                    style: {
-                                        color: '#2855D1'
-                                    }
-                                }, void 0, false, {
-                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 989,
-                                    columnNumber: 15
-                                }, this)
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 988,
-                                columnNumber: 13
-                            }, this),
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
-                                title: "群体发现",
-                                placement: "left",
-                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                    size: "small",
-                                    type: "text",
-                                    icon: (0, _jsxdevruntime.jsxDEV)(_icons.ClusterOutlined, {}, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 1001,
-                                        columnNumber: 23
-                                    }, void 0),
-                                    onClick: ()=>scrollToSection('community'),
-                                    style: {
-                                        color: '#722ed1'
-                                    }
-                                }, void 0, false, {
-                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 998,
-                                    columnNumber: 15
-                                }, this)
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 997,
-                                columnNumber: 13
-                            }, this),
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
-                                title: "风险传导路径",
-                                placement: "left",
-                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                    size: "small",
-                                    type: "text",
-                                    icon: (0, _jsxdevruntime.jsxDEV)(_icons.NodeIndexOutlined, {}, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 1010,
-                                        columnNumber: 23
-                                    }, void 0),
-                                    onClick: ()=>scrollToSection('risk-paths'),
-                                    style: {
-                                        color: '#f5222d'
-                                    }
-                                }, void 0, false, {
-                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 1007,
-                                    columnNumber: 15
-                                }, this)
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 1006,
-                                columnNumber: 13
-                            }, this),
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
-                                title: "综合风险报告",
-                                placement: "left",
-                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                    size: "small",
-                                    type: "text",
-                                    icon: (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {}, void 0, false, {
-                                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 1019,
-                                        columnNumber: 23
-                                    }, void 0),
-                                    onClick: ()=>scrollToSection('final-report'),
-                                    style: {
-                                        color: '#1e293b'
-                                    }
-                                }, void 0, false, {
-                                    fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                    lineNumber: 1016,
-                                    columnNumber: 15
-                                }, this)
-                            }, void 0, false, {
-                                fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 1015,
-                                columnNumber: 13
-                            }, this)
-                        ]
-                    }, void 0, true, {
-                        fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 970,
-                        columnNumber: 11
-                    }, this)
+                    }, void 0, true)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                lineNumber: 358,
+                lineNumber: 662,
                 columnNumber: 7
             }, this),
             (0, _jsxdevruntime.jsxDEV)(_antd.Drawer, {
@@ -6773,24 +10498,24 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                             spin: true
                         }, void 0, false, {
                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                            lineNumber: 1037,
+                            lineNumber: 1461,
                             columnNumber: 30
                         }, void 0)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                        lineNumber: 1037,
+                        lineNumber: 1461,
                         columnNumber: 13
                     }, this)
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                    lineNumber: 1036,
+                    lineNumber: 1460,
                     columnNumber: 11
                 }, this) : historyReports.length === 0 ? (0, _jsxdevruntime.jsxDEV)(_antd.Empty, {
                     description: "暂无历史报告",
                     image: _antd.Empty.PRESENTED_IMAGE_SIMPLE
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                    lineNumber: 1040,
+                    lineNumber: 1464,
                     columnNumber: 11
                 }, this) : (0, _jsxdevruntime.jsxDEV)(_antd.List, {
                     dataSource: historyReports,
@@ -6823,7 +10548,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 children: item.report_id
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 1051,
+                                                lineNumber: 1475,
                                                 columnNumber: 21
                                             }, void 0),
                                             (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
@@ -6835,13 +10560,13 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                                 children: RISK_LEVEL_LABELS[item.overall_risk_level] || ((_item_overall_risk_level = item.overall_risk_level) === null || _item_overall_risk_level === void 0 ? void 0 : _item_overall_risk_level.toUpperCase())
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                                lineNumber: 1052,
+                                                lineNumber: 1476,
                                                 columnNumber: 21
                                             }, void 0)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 1050,
+                                        lineNumber: 1474,
                                         columnNumber: 19
                                     }, void 0),
                                     (0, _jsxdevruntime.jsxDEV)(Text, {
@@ -6853,7 +10578,7 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                         children: item.query_summary || '-'
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 1059,
+                                        lineNumber: 1483,
                                         columnNumber: 19
                                     }, void 0),
                                     (0, _jsxdevruntime.jsxDEV)(Text, {
@@ -6869,39 +10594,39 @@ const RiskReportPanel = ({ report, stages, community, isLoading, error, onRetry,
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                        lineNumber: 1062,
+                                        lineNumber: 1486,
                                         columnNumber: 19
                                     }, void 0)
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                                lineNumber: 1049,
+                                lineNumber: 1473,
                                 columnNumber: 17
                             }, void 0)
                         }, void 0, false, {
                             fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                            lineNumber: 1045,
+                            lineNumber: 1469,
                             columnNumber: 15
                         }, void 0);
                     }
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                    lineNumber: 1042,
+                    lineNumber: 1466,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-                lineNumber: 1029,
+                lineNumber: 1453,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/components/RiskReportPanel.tsx",
-        lineNumber: 344,
+        lineNumber: 648,
         columnNumber: 5
     }, this);
 };
-_s(RiskReportPanel, "EpO1d8w/blCTlQOePdIZRR48a+0=", false, function() {
+_s(RiskReportPanel, "hAXFpttjM3v2iCcddnTWCAhfrnQ=", false, function() {
     return [
         _antd.App.useApp
     ];
@@ -6953,9 +10678,9 @@ __mako_require__.e(exports, {
     }
 });
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
-var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
 var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
-var _react = _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
+var _react = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
 var _antd = __mako_require__("node_modules/antd/es/index.js");
 var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
 var _EntityMessageBubble = __mako_require__("src/pages/KnowledgeQA/components/EntityMessageBubble.tsx");
@@ -6978,6 +10703,7 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
     _s();
     const [input, setInput] = (0, _react.useState)('');
     const [contextTags, setContextTags] = (0, _react.useState)([]);
+    const messagesContainerRef = (0, _react.useRef)(null);
     const messagesEndRef = (0, _react.useRef)(null);
     const inputRef = (0, _react.useRef)(null);
     const uploadedFile = (0, _agentStore.useAgentStore)((s)=>s.uploadedFile);
@@ -6986,10 +10712,16 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
     const clearUploadedFile = (0, _agentStore.useAgentStore)((s)=>s.clearUploadedFile);
     const storeError = (0, _agentStore.useAgentStore)((s)=>s.error);
     (0, _react.useEffect)(()=>{
-        var _messagesEndRef_current;
-        (_messagesEndRef_current = messagesEndRef.current) === null || _messagesEndRef_current === void 0 || _messagesEndRef_current.scrollIntoView({
-            behavior: 'smooth'
-        });
+        const container = messagesContainerRef.current;
+        if (!container) return;
+        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distanceToBottom < 96) {
+            var _messagesEndRef_current;
+            (_messagesEndRef_current = messagesEndRef.current) === null || _messagesEndRef_current === void 0 || _messagesEndRef_current.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest'
+            });
+        }
     }, [
         messages,
         isLoading
@@ -7005,7 +10737,9 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
             await onSendMessage(fullQuery);
             setInput('');
             (_inputRef_current = inputRef.current) === null || _inputRef_current === void 0 || _inputRef_current.focus();
-        } catch  {}
+        } catch  {
+        // Keep input text on failure
+        }
     }, [
         input,
         isLoading,
@@ -7025,7 +10759,7 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
     const handleClearTags = ()=>{
         setContextTags([]);
     };
-    return (0, _jsxdevruntime.jsxDEV)("div", {
+    return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
         style: {
             display: 'flex',
             flexDirection: 'column',
@@ -7033,7 +10767,7 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
             background: 'linear-gradient(180deg, #F7F9FC 0%, #F1F5F9 100%)'
         },
         children: [
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     padding: '12px 16px',
                     display: 'flex',
@@ -7045,9 +10779,9 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                     boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)'
                 },
                 children: [
-                    (0, _jsxdevruntime.jsxDEV)("div", {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         children: [
-                            (0, _jsxdevruntime.jsxDEV)("h2", {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("h2", {
                                 style: {
                                     margin: 0,
                                     fontSize: 15,
@@ -7057,10 +10791,10 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 children: "Chat"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 111,
+                                lineNumber: 117,
                                 columnNumber: 11
                             }, this),
-                            (0, _jsxdevruntime.jsxDEV)(Text, {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(Text, {
                                 type: "secondary",
                                 className: "text-xs",
                                 children: [
@@ -7069,16 +10803,16 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 114,
+                                lineNumber: 120,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 110,
+                        lineNumber: 116,
                         columnNumber: 9
                     }, this),
-                    (0, _jsxdevruntime.jsxDEV)("button", {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("button", {
                         onClick: onClearHistory,
                         style: {
                             background: 'none',
@@ -7101,51 +10835,52 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                         },
                         title: "Clear chat",
                         children: [
-                            (0, _jsxdevruntime.jsxDEV)(_icons.ClearOutlined, {}, void 0, false, {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.ClearOutlined, {}, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 141,
+                                lineNumber: 147,
                                 columnNumber: 11
                             }, this),
-                            (0, _jsxdevruntime.jsxDEV)("span", {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                 children: "Clear"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 142,
+                                lineNumber: 148,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 118,
+                        lineNumber: 124,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                lineNumber: 98,
+                lineNumber: 104,
                 columnNumber: 7
             }, this),
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
+                ref: messagesContainerRef,
                 style: {
                     flex: 1,
                     overflowY: 'auto',
                     padding: '16px'
                 },
-                children: messages.length === 0 ? (0, _jsxdevruntime.jsxDEV)("div", {
+                children: messages.length === 0 ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                     style: {
                         height: '100%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                     },
-                    children: (0, _jsxdevruntime.jsxDEV)(_antd.Empty, {
+                    children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Empty, {
                         image: _antd.Empty.PRESENTED_IMAGE_SIMPLE,
-                        description: (0, _jsxdevruntime.jsxDEV)("div", {
+                        description: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                             style: {
                                 textAlign: 'center'
                             },
                             children: [
-                                (0, _jsxdevruntime.jsxDEV)("p", {
+                                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("p", {
                                     style: {
                                         color: '#475569',
                                         fontSize: 14,
@@ -7154,10 +10889,10 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     children: "Start your first query!"
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                    lineNumber: 161,
+                                    lineNumber: 167,
                                     columnNumber: 19
                                 }, void 0),
-                                (0, _jsxdevruntime.jsxDEV)("p", {
+                                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("p", {
                                     style: {
                                         color: '#94A3B8',
                                         fontSize: 12
@@ -7165,31 +10900,31 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     children: 'Try: "查询某公司近期的风险传导路径和异常事件"'
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                    lineNumber: 164,
+                                    lineNumber: 170,
                                     columnNumber: 19
                                 }, void 0)
                             ]
                         }, void 0, true, {
                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                            lineNumber: 160,
+                            lineNumber: 166,
                             columnNumber: 17
                         }, void 0)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 157,
+                        lineNumber: 163,
                         columnNumber: 13
                     }, this)
                 }, void 0, false, {
                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                    lineNumber: 149,
+                    lineNumber: 155,
                     columnNumber: 11
-                }, this) : (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
+                }, this) : /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
                     children: [
                         messages.map((msg)=>{
                             var _msg_data, _msg_data1;
-                            return (0, _jsxdevruntime.jsxDEV)("div", {
+                            return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                 children: [
-                                    (0, _jsxdevruntime.jsxDEV)(_EntityMessageBubble.EntityMessageBubble, {
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_EntityMessageBubble.EntityMessageBubble, {
                                         message: msg,
                                         onEntityHover: onEntityHover,
                                         onEntityClick: (entity)=>{
@@ -7208,25 +10943,25 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                         highlightedEntity: highlightedEntity
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 175,
+                                        lineNumber: 181,
                                         columnNumber: 17
                                     }, this),
-                                    msg.role === 'assistant' && (((_msg_data = msg.data) === null || _msg_data === void 0 ? void 0 : _msg_data.output) || pendingRecommendations) && (0, _jsxdevruntime.jsxDEV)("div", {
+                                    msg.role === 'assistant' && (((_msg_data = msg.data) === null || _msg_data === void 0 ? void 0 : _msg_data.output) || pendingRecommendations) && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                         style: {
                                             marginLeft: 44,
                                             marginBottom: 12
                                         },
-                                        children: pendingRecommendations && pendingRecommendations.length > 0 ? (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
+                                        children: pendingRecommendations && pendingRecommendations.length > 0 ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_jsxdevruntime.Fragment, {
                                             children: [
-                                                (0, _jsxdevruntime.jsxDEV)(_RiskEntityCard.RiskEntityCard, {
+                                                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_RiskEntityCard.RiskEntityCard, {
                                                     recommendations: pendingRecommendations,
                                                     onEntityClick: ()=>{}
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                                    lineNumber: 191,
+                                                    lineNumber: 197,
                                                     columnNumber: 25
                                                 }, this),
-                                                (0, _jsxdevruntime.jsxDEV)("div", {
+                                                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                                     style: {
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -7234,14 +10969,14 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                                         marginTop: 8
                                                     },
                                                     children: [
-                                                        (0, _jsxdevruntime.jsxDEV)(_antd.Spin, {
+                                                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Spin, {
                                                             size: "small"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                                            lineNumber: 196,
+                                                            lineNumber: 202,
                                                             columnNumber: 27
                                                         }, this),
-                                                        (0, _jsxdevruntime.jsxDEV)("span", {
+                                                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                                             style: {
                                                                 color: _constants.DESIGN_TOKENS.TEXT_MUTED,
                                                                 fontSize: 12
@@ -7249,17 +10984,17 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                                             children: "Generating review..."
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                                            lineNumber: 197,
+                                                            lineNumber: 203,
                                                             columnNumber: 27
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                                    lineNumber: 195,
+                                                    lineNumber: 201,
                                                     columnNumber: 25
                                                 }, this)
                                             ]
-                                        }, void 0, true) : ((_msg_data1 = msg.data) === null || _msg_data1 === void 0 ? void 0 : _msg_data1.output) ? (0, _jsxdevruntime.jsxDEV)(_RiskEntityCard.RiskEntityCard, {
+                                        }, void 0, true) : ((_msg_data1 = msg.data) === null || _msg_data1 === void 0 ? void 0 : _msg_data1.output) ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_RiskEntityCard.RiskEntityCard, {
                                             recommendations: msg.data.output.recommendations || [],
                                             onEntityClick: (entityId, entityType)=>{
                                                 setContextTags((prev)=>{
@@ -7276,36 +11011,36 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                             }
                                         }, void 0, false, {
                                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                            lineNumber: 203,
+                                            lineNumber: 209,
                                             columnNumber: 23
                                         }, this) : null
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 188,
+                                        lineNumber: 194,
                                         columnNumber: 19
                                     }, this)
                                 ]
                             }, msg.id, true, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 174,
+                                lineNumber: 180,
                                 columnNumber: 15
                             }, this);
                         }),
-                        (0, _jsxdevruntime.jsxDEV)("div", {
+                        /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                             ref: messagesEndRef
                         }, void 0, false, {
                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                            lineNumber: 218,
+                            lineNumber: 224,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true)
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                lineNumber: 147,
+                lineNumber: 153,
                 columnNumber: 7
             }, this),
-            (0, _jsxdevruntime.jsxDEV)("div", {
+            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                 style: {
                     padding: '12px 16px',
                     background: 'rgba(255, 255, 255, 0.9)',
@@ -7313,7 +11048,7 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                     borderTop: `1px solid ${_constants.DESIGN_TOKENS.BORDER_DEFAULT}`
                 },
                 children: [
-                    graphInjectedEntity && (0, _jsxdevruntime.jsxDEV)("div", {
+                    graphInjectedEntity && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: {
                             display: 'flex',
                             alignItems: 'center',
@@ -7325,12 +11060,12 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                             marginBottom: 8
                         },
                         children: [
-                            (0, _jsxdevruntime.jsxDEV)("svg", {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("svg", {
                                 width: "12",
                                 height: "12",
                                 viewBox: "0 0 12 12",
                                 fill: "none",
-                                children: (0, _jsxdevruntime.jsxDEV)("path", {
+                                children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("path", {
                                     d: "M6 1L11 6L6 11",
                                     stroke: _constants.DESIGN_TOKENS.KLEIN_BLUE,
                                     strokeWidth: "1.5",
@@ -7338,15 +11073,15 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     strokeLinejoin: "round"
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                    lineNumber: 246,
+                                    lineNumber: 252,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 245,
+                                lineNumber: 251,
                                 columnNumber: 13
                             }, this),
-                            (0, _jsxdevruntime.jsxDEV)("span", {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                 style: {
                                     fontSize: 11,
                                     color: '#475569',
@@ -7355,10 +11090,10 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 children: "From Graph:"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 254,
+                                lineNumber: 260,
                                 columnNumber: 13
                             }, this),
-                            (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Tag, {
                                 style: {
                                     background: 'rgba(0, 47, 167, 0.1)',
                                     border: '1px solid rgba(0, 47, 167, 0.3)',
@@ -7372,10 +11107,10 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 children: graphInjectedEntity.name
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 257,
+                                lineNumber: 263,
                                 columnNumber: 13
                             }, this),
-                            (0, _jsxdevruntime.jsxDEV)("span", {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                 style: {
                                     fontSize: 11,
                                     color: '#94a3b8'
@@ -7383,10 +11118,10 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 children: "· Click input to continue"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 271,
+                                lineNumber: 277,
                                 columnNumber: 13
                             }, this),
-                            (0, _jsxdevruntime.jsxDEV)("button", {
+                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("button", {
                                 onClick: ()=>{
                                     var _inputRef_current;
                                     onClearGraphInject === null || onClearGraphInject === void 0 || onClearGraphInject();
@@ -7405,16 +11140,16 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 children: "×"
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 274,
+                                lineNumber: 280,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 233,
+                        lineNumber: 239,
                         columnNumber: 11
                     }, this),
-                    (0, _jsxdevruntime.jsxDEV)(_ContextTagBar.ContextTagBar, {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_ContextTagBar.ContextTagBar, {
                         tags: contextTags,
                         onRemove: handleRemoveTag,
                         onClearAll: handleClearTags,
@@ -7432,15 +11167,15 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                         }
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 295,
+                        lineNumber: 301,
                         columnNumber: 9
                     }, this),
-                    (0, _jsxdevruntime.jsxDEV)("div", {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: {
                             marginBottom: 8
                         },
                         children: [
-                            uploadedFile ? (0, _jsxdevruntime.jsxDEV)("div", {
+                            uploadedFile ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                 style: {
                                     display: 'flex',
                                     alignItems: 'center',
@@ -7451,17 +11186,17 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     border: '1px solid #d6e4ff'
                                 },
                                 children: [
-                                    (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {
                                         style: {
                                             color: '#2855D1',
                                             fontSize: 14
                                         }
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 321,
+                                        lineNumber: 327,
                                         columnNumber: 15
                                     }, this),
-                                    (0, _jsxdevruntime.jsxDEV)("span", {
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                         style: {
                                             fontSize: 12,
                                             flex: 1,
@@ -7469,7 +11204,7 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                         },
                                         children: [
                                             uploadedFile.filename,
-                                            (0, _jsxdevruntime.jsxDEV)("span", {
+                                            /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                                 style: {
                                                     color: '#64748b',
                                                     marginLeft: 6
@@ -7483,16 +11218,16 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                                lineNumber: 324,
+                                                lineNumber: 330,
                                                 columnNumber: 17
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 322,
+                                        lineNumber: 328,
                                         columnNumber: 15
                                     }, this),
-                                    uploadedFile.truncated && (0, _jsxdevruntime.jsxDEV)("span", {
+                                    uploadedFile.truncated && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                                         style: {
                                             fontSize: 11,
                                             color: '#fa8c16'
@@ -7500,15 +11235,36 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                         children: "内容过长，已自动截取前 50,000 字符"
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 329,
+                                        lineNumber: 335,
                                         columnNumber: 17
                                     }, this),
-                                    (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                        type: "primary",
+                                        size: "small",
+                                        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.SearchOutlined, {}, void 0, false, {
+                                            fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
+                                            lineNumber: 340,
+                                            columnNumber: 23
+                                        }, void 0),
+                                        onClick: ()=>{
+                                            onSendMessage('请分析该文件中的风险信息');
+                                        },
+                                        disabled: isLoading,
+                                        style: {
+                                            fontSize: 12
+                                        },
+                                        children: "协同治理"
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
+                                        lineNumber: 337,
+                                        columnNumber: 15
+                                    }, this),
+                                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
                                         type: "text",
                                         size: "small",
-                                        icon: (0, _jsxdevruntime.jsxDEV)(_icons.CloseOutlined, {}, void 0, false, {
+                                        icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.CloseOutlined, {}, void 0, false, {
                                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                            lineNumber: 334,
+                                            lineNumber: 352,
                                             columnNumber: 23
                                         }, void 0),
                                         onClick: clearUploadedFile,
@@ -7517,15 +11273,15 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                         }
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 331,
+                                        lineNumber: 349,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 310,
+                                lineNumber: 316,
                                 columnNumber: 13
-                            }, this) : (0, _jsxdevruntime.jsxDEV)(_antd.Upload, {
+                            }, this) : /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Upload, {
                                 accept: ".txt,.md,.docx,.pdf",
                                 showUploadList: false,
                                 beforeUpload: (file)=>{
@@ -7533,14 +11289,14 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     return false;
                                 },
                                 disabled: fileUploading || isLoading,
-                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
-                                    icon: fileUploading ? (0, _jsxdevruntime.jsxDEV)(_icons.LoadingOutlined, {}, void 0, false, {
+                                children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                    icon: fileUploading ? /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.LoadingOutlined, {}, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 350,
+                                        lineNumber: 368,
                                         columnNumber: 39
-                                    }, void 0) : (0, _jsxdevruntime.jsxDEV)(_icons.UploadOutlined, {}, void 0, false, {
+                                    }, void 0) : /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.UploadOutlined, {}, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 350,
+                                        lineNumber: 368,
                                         columnNumber: 61
                                     }, void 0),
                                     size: "small",
@@ -7553,15 +11309,15 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     children: fileUploading ? '上传中...' : '上传文本文件 (.txt .md .docx .pdf)'
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                    lineNumber: 349,
+                                    lineNumber: 367,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 340,
+                                lineNumber: 358,
                                 columnNumber: 13
                             }, this),
-                            storeError && (0, _jsxdevruntime.jsxDEV)("div", {
+                            storeError && /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                                 style: {
                                     fontSize: 11,
                                     color: '#f5222d',
@@ -7571,16 +11327,16 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                 children: storeError
                             }, void 0, false, {
                                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                lineNumber: 361,
+                                lineNumber: 379,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 308,
+                        lineNumber: 314,
                         columnNumber: 9
                     }, this),
-                    (0, _jsxdevruntime.jsxDEV)("div", {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                         style: {
                             background: '#FFFFFF',
                             border: `1px solid ${_constants.DESIGN_TOKENS.BORDER_DEFAULT}`,
@@ -7589,14 +11345,14 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                             transition: 'all 0.2s ease',
                             boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)'
                         },
-                        children: (0, _jsxdevruntime.jsxDEV)("div", {
+                        children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("div", {
                             style: {
                                 display: 'flex',
                                 gap: 8,
                                 alignItems: 'flex-end'
                             },
                             children: [
-                                (0, _jsxdevruntime.jsxDEV)(TextArea, {
+                                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(TextArea, {
                                     ref: inputRef,
                                     value: input,
                                     onChange: (e)=>setInput(e.target.value),
@@ -7619,10 +11375,10 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                     disabled: isLoading || fileUploading
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                    lineNumber: 376,
+                                    lineNumber: 394,
                                     columnNumber: 13
                                 }, this),
-                                (0, _jsxdevruntime.jsxDEV)("button", {
+                                /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("button", {
                                     onClick: handleSend,
                                     disabled: !input.trim() || isLoading,
                                     style: {
@@ -7640,32 +11396,32 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                                         flexShrink: 0,
                                         boxShadow: input.trim() && !isLoading ? '0 4px 12px rgba(40, 85, 209, 0.3)' : 'none'
                                     },
-                                    children: (0, _jsxdevruntime.jsxDEV)(_icons.SendOutlined, {
+                                    children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.SendOutlined, {
                                         style: {
                                             fontSize: 15
                                         }
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                        lineNumber: 424,
+                                        lineNumber: 442,
                                         columnNumber: 15
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                                    lineNumber: 399,
+                                    lineNumber: 417,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                            lineNumber: 375,
+                            lineNumber: 393,
                             columnNumber: 11
                         }, this)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 365,
+                        lineNumber: 383,
                         columnNumber: 9
                     }, this),
-                    (0, _jsxdevruntime.jsxDEV)("span", {
+                    /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)("span", {
                         style: {
                             color: _constants.DESIGN_TOKENS.TEXT_MUTED,
                             fontSize: 12,
@@ -7676,23 +11432,23 @@ const WorkspaceContainer = ({ messages, isLoading, pendingRecommendations, onSen
                         children: "Enter 发送 · Shift+Enter 换行 · 双击图谱节点添加上下文"
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                        lineNumber: 429,
+                        lineNumber: 447,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-                lineNumber: 224,
+                lineNumber: 230,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/components/WorkspaceContainer.tsx",
-        lineNumber: 89,
+        lineNumber: 95,
         columnNumber: 5
     }, this);
 };
-_s(WorkspaceContainer, "UMJKJEDdJ4LU6qv75WAXLuFyLKY=", false, function() {
+_s(WorkspaceContainer, "h4iZbWV1CrQ/bw64RFWamI9Bh3o=", false, function() {
     return [
         _agentStore.useAgentStore,
         _agentStore.useAgentStore,
@@ -7728,23 +11484,40 @@ if ($RefreshIsReactComponentLike$(module.exports)) {
 }
 
 },
-"src/pages/KnowledgeQA/components/charts/EventBarChart.tsx": function (module, exports, __mako_require__){
+"src/pages/KnowledgeQA/components/graphStyles.ts": function (module, exports, __mako_require__){
+// Shared graph color constants — imported by both EnhancedGraphPanel and LegendPanel
 "use strict";
 __mako_require__.d(exports, "__esModule", {
     value: true
 });
-__mako_require__.d(exports, "default", {
-    enumerable: true,
-    get: function() {
-        return _default;
+function _export(target, all) {
+    for(var name in all)Object.defineProperty(target, name, {
+        enumerable: true,
+        get: all[name]
+    });
+}
+__mako_require__.e(exports, {
+    COMMUNITY_COLORS: function() {
+        return COMMUNITY_COLORS;
+    },
+    EDGE_COLORS: function() {
+        return EDGE_COLORS;
+    },
+    NODE_TYPE_COLORS: function() {
+        return NODE_TYPE_COLORS;
+    },
+    NODE_TYPE_LABELS: function() {
+        return NODE_TYPE_LABELS;
+    },
+    RELATION_LABELS: function() {
+        return RELATION_LABELS;
+    },
+    RISK_LEVEL_VISUAL: function() {
+        return RISK_LEVEL_VISUAL;
     }
 });
-var _interop_require_default = __mako_require__("@swc/helpers/_/_interop_require_default");
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
 var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
-var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
-var _react = /*#__PURE__*/ _interop_require_default._(__mako_require__("node_modules/react/index.js"));
-var _echartsforreact = /*#__PURE__*/ _interop_require_default._(__mako_require__("node_modules/echarts-for-react/esm/index.js"));
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -7753,91 +11526,83 @@ self.$RefreshReg$ = (type, id)=>{
     _reactrefresh.register(type, module.id + id);
 };
 self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
-const EventBarChart = ({ data })=>{
-    const sorted = [
-        ...data
-    ].sort((a, b)=>b.count - a.count);
-    const option = {
-        tooltip: {
-            trigger: 'axis',
-            axisPointer: {
-                type: 'shadow'
-            }
-        },
-        grid: {
-            left: 10,
-            right: 20,
-            top: 5,
-            bottom: 5,
-            containLabel: true
-        },
-        xAxis: {
-            type: 'value',
-            axisLabel: {
-                fontSize: 10,
-                color: '#94a3b8'
-            },
-            splitLine: {
-                lineStyle: {
-                    color: '#f1f5f9'
-                }
-            }
-        },
-        yAxis: {
-            type: 'category',
-            data: sorted.map((d)=>d.name),
-            axisLabel: {
-                fontSize: 10,
-                color: '#475569'
-            },
-            axisLine: {
-                show: false
-            },
-            axisTick: {
-                show: false
-            }
-        },
-        series: [
-            {
-                type: 'bar',
-                data: sorted.map((d)=>({
-                        value: d.count,
-                        itemStyle: {
-                            color: d.color,
-                            borderRadius: [
-                                0,
-                                4,
-                                4,
-                                0
-                            ]
-                        }
-                    })),
-                barWidth: 14,
-                label: {
-                    show: true,
-                    position: 'right',
-                    fontSize: 10,
-                    color: '#64748b'
-                }
-            }
-        ]
-    };
-    return /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_echartsforreact.default, {
-        option: option,
-        style: {
-            height: sorted.length * 30 + 50,
-            maxHeight: 200
-        }
-    }, void 0, false, {
-        fileName: "src/pages/KnowledgeQA/components/charts/EventBarChart.tsx",
-        lineNumber: 53,
-        columnNumber: 10
-    }, this);
+const NODE_TYPE_COLORS = {
+    COMPANY: '#1890ff',
+    PERSON: '#722ed1',
+    EVENT: '#f5222d',
+    SUB_EVENT: '#f5222d',
+    TIME: '#8c8c8c',
+    RiskFeature: '#52c41a',
+    RiskFactor: '#52c41a',
+    Action: '#8c8c8c',
+    Regulation: '#faad14',
+    Law: '#faad14'
 };
-_c = EventBarChart;
-var _default = EventBarChart;
-var _c;
-$RefreshReg$(_c, "EventBarChart");
+const NODE_TYPE_LABELS = {
+    COMPANY: '企业',
+    PERSON: '人物',
+    EVENT: '事件',
+    SUB_EVENT: '子事件',
+    TIME: '时间',
+    RiskFeature: '风险特征',
+    RiskFactor: '风险因子',
+    Action: '操作',
+    Regulation: '法规',
+    Law: '法律'
+};
+const RELATION_LABELS = {
+    INVEST: '投资',
+    GUARANTEE: '担保',
+    WORK: '任职',
+    CONTROLLER: '控制',
+    MENTION: '涉及',
+    TRIGGERS: '触发',
+    REFLECTS: '反映',
+    COMPLIES_WITH: '合规',
+    CAUSE: '因果',
+    BELONG: '归属'
+};
+const EDGE_COLORS = {
+    INVEST: '#1890ff',
+    GUARANTEE: '#faad14',
+    WORK: '#722ed1',
+    CONTROLLER: '#722ed1',
+    MENTION: '#f5222d',
+    TRIGGERS: '#f5222d',
+    REFLECTS: '#fa8c16',
+    COMPLIES_WITH: '#722ed1',
+    CAUSE: '#fa541c',
+    BELONG: '#52c41a'
+};
+const RISK_LEVEL_VISUAL = {
+    high: {
+        border: '#f5222d',
+        bg: '#FFF2F0',
+        label: '高风险'
+    },
+    medium: {
+        border: '#faad14',
+        bg: '#FFFBE6',
+        label: '中风险'
+    },
+    low: {
+        border: '#52c41a',
+        bg: '#F6FFED',
+        label: '低风险'
+    }
+};
+const COMMUNITY_COLORS = [
+    '#5B8FF9',
+    '#5AD8A6',
+    '#F6BD16',
+    '#E8684A',
+    '#9270CA',
+    '#6DC8EC',
+    '#FF9D4D',
+    '#269A99',
+    '#FF99C3',
+    '#5D7092'
+];
 if (prevRefreshReg) self.$RefreshReg$ = prevRefreshReg;
 if (prevRefreshSig) self.$RefreshSig$ = prevRefreshSig;
 function registerClassComponent(filename, moduleExports) {
@@ -7880,13 +11645,18 @@ var _jsxdevruntime = __mako_require__("node_modules/react/jsx-dev-runtime.js");
 var _react = _interop_require_wildcard._(__mako_require__("node_modules/react/index.js"));
 var _procomponents = __mako_require__("node_modules/@ant-design/pro-components/es/index.js");
 var _antd = __mako_require__("node_modules/antd/es/index.js");
+var _icons = __mako_require__("node_modules/@ant-design/icons/es/index.js");
 var _WorkspaceContainer = __mako_require__("src/pages/KnowledgeQA/components/WorkspaceContainer.tsx");
 var _EnhancedGraphPanel = __mako_require__("src/pages/KnowledgeQA/components/EnhancedGraphPanel.tsx");
 var _RiskReportPanel = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/RiskReportPanel.tsx"));
+var _ComplianceAnalysisPanel = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/ComplianceAnalysisPanel.tsx"));
+var _AgentTracePanel = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/AgentTracePanel.tsx"));
+var _LegendPanel = _interop_require_default._(__mako_require__("src/pages/KnowledgeQA/components/LegendPanel.tsx"));
 var _ChatSidebar = __mako_require__("src/pages/KnowledgeQA/components/ChatSidebar.tsx");
 var _agentStore = __mako_require__("src/pages/KnowledgeQA/store/agentStore.ts");
 var _chatStore = __mako_require__("src/pages/KnowledgeQA/store/chatStore.ts");
 var _constants = __mako_require__("src/pages/KnowledgeQA/styles/constants.ts");
+var _graphStyles = __mako_require__("src/pages/KnowledgeQA/components/graphStyles.ts");
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -7896,6 +11666,99 @@ self.$RefreshReg$ = (type, id)=>{
 };
 self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
 var _s = $RefreshSig$();
+const RELATION_TEXT = {
+    INVEST: '投资',
+    GUARANTEE: '担保',
+    WORK: '任职',
+    CONTROLLER: '控制',
+    MENTION: '涉及',
+    TRIGGERS: '触发',
+    REFLECTS: '反映',
+    COMPLIES_WITH: '合规',
+    CAUSE: '因果',
+    BELONG: '归属',
+    TRANSACTION: '交易',
+    WARNING: '预警',
+    RELATED: '关联'
+};
+const ATTRIBUTE_LABELS = {
+    entity_id: '实体ID',
+    id: '实体ID',
+    COMPANY_NM: '公司名称',
+    COMPANY_NAME: '公司名称',
+    PERSON_NM: '人员姓名',
+    PERSON_NAME: '人员姓名',
+    name: '名称',
+    title: '标题',
+    label: '标签',
+    STATUS: '状态',
+    LEGAL_PERSON: '法定代表人',
+    LEGAL_REPRESENTATIVE: '法定代表人',
+    REG_CAPITAL: '注册资本',
+    ESTABLISH_DATE: '成立日期',
+    INDUSTRY: '所属行业',
+    ADDRESS: '注册地址',
+    CREDIT_CODE: '统一社会信用代码',
+    RISK_INFO: '风险信息',
+    WARNING_NUM: '预警次数',
+    EVENT_TYPE: '事件类型',
+    EVENT_DATE: '事件日期',
+    AMOUNT: '金额',
+    POSITION: '职位',
+    role: '角色',
+    score: '匹配分数',
+    risk_level: '风险等级',
+    compliance_score: '合规总分',
+    entity_type: '实体类型',
+    type: '实体类型'
+};
+const HIDDEN_ATTRIBUTE_KEYS = new Set([
+    'raw',
+    'properties',
+    'embedding',
+    'vector',
+    'graph_embedding',
+    'semantic_embedding',
+    'poster',
+    'poster_url'
+]);
+function formatAttributeValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (Array.isArray(value)) return value.map(formatAttributeValue).filter(Boolean).join('、');
+    if (typeof value === 'object') try {
+        const entries = Object.entries(value).filter(([, v])=>v !== undefined && v !== null && v !== '').slice(0, 6);
+        return entries.map(([k, v])=>`${ATTRIBUTE_LABELS[k] || k}: ${formatAttributeValue(v)}`).join('；');
+    } catch  {
+        return '';
+    }
+    return String(value);
+}
+function getNodeAttributes(node) {
+    const props = node.properties || {};
+    const fields = {
+        entity_id: node.id,
+        entity_type: node.entity_type || node.entityType || node.type,
+        ...props,
+        risk_level: node.risk_level,
+        compliance_score: node.compliance_score,
+        score: node.score
+    };
+    const displayName = node.title || node.zh_name || node.name || node.label || node.id;
+    const seen = new Set();
+    return Object.entries(fields).filter(([key, value])=>{
+        if (HIDDEN_ATTRIBUTE_KEYS.has(key)) return false;
+        if (value === undefined || value === null || value === '') return false;
+        const text = formatAttributeValue(value);
+        if (!text || key !== 'entity_id' && text === String(displayName)) return false;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).map(([key, value])=>({
+            key,
+            label: ATTRIBUTE_LABELS[key] || key.replace(/_/g, ' '),
+            value: formatAttributeValue(value)
+        })).slice(0, 18);
+}
 function extractSubjectEntityIds(query, nodes) {
     if (!query || nodes.length === 0) return [];
     const matched = [];
@@ -7964,12 +11827,19 @@ function findNeighborIds(nodeIds, edges) {
 const KnowledgeQA = ()=>{
     _s();
     const { message } = _antd.App.useApp();
-    const { messages, currentSubgraph, alignmentFeatures, isLoading, sendMessage, clearHistory, pendingRecommendations, clarifyMessage, activeRightPanel, riskReport, riskStages, riskCommunity, error, retryRiskQuery } = (0, _agentStore.useAgentStore)();
+    const { messages, currentSubgraph, alignmentFeatures, isLoading, sendUnifiedMessage, clearHistory, pendingRecommendations, clarifyMessage, activeRightPanel, riskReport, riskStages, riskCommunity, riskEntityCommunityMap, resolvedEntities, riskScores, governancePlan, complianceScores, complianceIndicators, error, retryRiskQuery, agentTraces } = (0, _agentStore.useAgentStore)();
     const { activeSessionId, updateCurrentSession, getActiveSession, createNewSession } = (0, _chatStore.useChatStore)();
     const graphRef = (0, _react.useRef)(null);
     const [highlightedEntity, setHighlightedEntity] = (0, _react.useState)(null);
     const [graphInjectedEntity, setGraphInjectedEntity] = (0, _react.useState)(null);
     const [sidebarCollapsed, setSidebarCollapsed] = (0, _react.useState)(false);
+    const [graphStats, setGraphStats] = (0, _react.useState)(null);
+    const [drawerNode, setDrawerNode] = (0, _react.useState)(null);
+    const [tracePanelVisible, setTracePanelVisible] = (0, _react.useState)(false);
+    const [visibleCategories, setVisibleCategories] = (0, _react.useState)(new Set([
+        ...Object.keys(_graphStyles.NODE_TYPE_LABELS),
+        ...Object.keys(_graphStyles.RELATION_LABELS)
+    ]));
     (0, _react.useEffect)(()=>{
         if (_agentStore.useAgentStore.getState().isLoading) return;
         if (!activeSessionId) {
@@ -8012,16 +11882,22 @@ const KnowledgeQA = ()=>{
         const session = getActiveSession();
         if (!session) return;
         const savedPanel = session.workspaceState.riskReport ? 'risk' : session.workspaceState.graphData ? 'graph' : 'graph';
+        const rawGraph = session.workspaceState.graphData;
+        const normalizedGraph = rawGraph ? {
+            nodes: (0, _agentStore.normalizeSubgraphNodes)(rawGraph.nodes || []),
+            edges: (0, _agentStore.normalizeSubgraphEdges)(rawGraph.edges || []),
+            paths: rawGraph.paths || []
+        } : null;
         _agentStore.useAgentStore.setState({
             messages: session.messages,
-            currentSubgraph: session.workspaceState.graphData,
+            currentSubgraph: normalizedGraph,
             riskReport: session.workspaceState.riskReport || null,
             riskStages: session.workspaceState.riskStages || [],
             riskCommunity: session.workspaceState.riskCommunity || null,
             activeRightPanel: savedPanel === 'analysis' ? 'graph' : savedPanel
         });
-        if (session.workspaceState.graphData && graphRef.current) {
-            graphRef.current.refresh(session.workspaceState.graphData, []);
+        if (normalizedGraph && graphRef.current) {
+            graphRef.current.refresh(normalizedGraph, []);
             setTimeout(()=>{
                 var _graphRef_current;
                 return (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 ? void 0 : _graphRef_current.fitView();
@@ -8031,7 +11907,9 @@ const KnowledgeQA = ()=>{
         activeSessionId
     ]);
     (0, _react.useEffect)(()=>{
-        if (currentSubgraph && graphRef.current) {
+        if (!currentSubgraph) return;
+        const doRefresh = ()=>{
+            if (!graphRef.current) return false;
             const lastUserMsg = [
                 ...messages
             ].reverse().find((m)=>m.role === 'user');
@@ -8039,24 +11917,28 @@ const KnowledgeQA = ()=>{
             const subjectIds = extractSubjectEntityIds(query, currentSubgraph.nodes);
             const neighborIds = findNeighborIds(subjectIds, currentSubgraph.edges);
             graphRef.current.refresh(currentSubgraph, alignmentFeatures, subjectIds, neighborIds);
-            if (subjectIds.length > 0) {
-                const t = setTimeout(()=>{
-                    var _graphRef_current, _graphRef_current1;
-                    (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.focusNode(subjectIds[0]);
-                    (_graphRef_current1 = graphRef.current) === null || _graphRef_current1 === void 0 || _graphRef_current1.dimNonFocused(subjectIds, neighborIds);
-                }, 600);
-                return ()=>clearTimeout(t);
-            } else {
-                const t = setTimeout(()=>{
-                    var _graphRef_current;
-                    return (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 ? void 0 : _graphRef_current.fitView();
-                }, 500);
-                return ()=>clearTimeout(t);
-            }
+            if (subjectIds.length > 0) setTimeout(()=>{
+                var _graphRef_current, _graphRef_current1;
+                (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.focusNode(subjectIds[0]);
+                (_graphRef_current1 = graphRef.current) === null || _graphRef_current1 === void 0 || _graphRef_current1.dimNonFocused(subjectIds, neighborIds);
+            }, 600);
+            else setTimeout(()=>{
+                var _graphRef_current;
+                return (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 ? void 0 : _graphRef_current.fitView();
+            }, 500);
+            return true;
+        };
+        if (!doRefresh()) {
+            console.log('[KnowledgeQA] graphRef not ready, retrying refresh in 100ms...');
+            const retryTimer = setTimeout(()=>{
+                if (!doRefresh()) console.warn('[KnowledgeQA] graphRef still not ready after retry — subgraph data may not be rendered');
+            }, 100);
+            return ()=>clearTimeout(retryTimer);
         }
     }, [
         currentSubgraph,
-        alignmentFeatures
+        alignmentFeatures,
+        riskEntityCommunityMap
     ]);
     const handleEntityHover = (0, _react.useCallback)((entityId)=>{
         setHighlightedEntity(entityId);
@@ -8082,55 +11964,44 @@ const KnowledgeQA = ()=>{
         });
         if (graphRef.current) graphRef.current.searchAndExpand(entityId, entityType);
     }, []);
-    const handleAddMonitor = (0, _react.useCallback)(async (entityName, entityType)=>{
-        try {
-            const resp = await fetch('/api/v1/risk/tickets', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    reportId: `watch-${entityName}`,
-                    assignedDept: '风控部',
-                    entityType
-                })
-            });
-            if (resp.ok) {
-                var _data_data;
-                const data = await resp.json();
-                message.success(`Monitor created: ${(data === null || data === void 0 ? void 0 : (_data_data = data.data) === null || _data_data === void 0 ? void 0 : _data_data.ticket_id) || 'OK'}`);
-            } else message.error('Failed to create monitor ticket');
-        } catch  {
-            message.error('Failed to create monitor ticket');
+    const handleNodeClick = (0, _react.useCallback)((node)=>{
+        setDrawerNode(node);
+    }, []);
+    const handleCanvasClick = (0, _react.useCallback)(()=>{
+        setDrawerNode(null);
+        setVisibleCategories(new Set([
+            ...Object.keys(_graphStyles.NODE_TYPE_LABELS),
+            ...Object.keys(_graphStyles.RELATION_LABELS)
+        ]));
+    }, []);
+    const handleDrawerClose = (0, _react.useCallback)(()=>{
+        var _graphRef_current;
+        setDrawerNode(null);
+        (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.translateCanvas(0, 0);
+    }, []);
+    const handleDrawerJumpToNode = (0, _react.useCallback)((nodeId, nodeName)=>{
+        const subgraph = _agentStore.useAgentStore.getState().currentSubgraph;
+        const targetNode = subgraph === null || subgraph === void 0 ? void 0 : subgraph.nodes.find((n)=>String(n.id) === nodeId);
+        if (targetNode) {
+            var _graphRef_current;
+            setDrawerNode(targetNode);
+            (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.focusNode(nodeId);
         }
-    }, [
-        message
-    ]);
-    const handleGenerateTicket = (0, _react.useCallback)(async (recommendation)=>{
-        try {
-            var _useAgentStore_getState_riskReport;
-            const reportId = ((_useAgentStore_getState_riskReport = _agentStore.useAgentStore.getState().riskReport) === null || _useAgentStore_getState_riskReport === void 0 ? void 0 : _useAgentStore_getState_riskReport.report_id) || 'risk-report';
-            const resp = await fetch('/api/v1/risk/tickets', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    reportId,
-                    assignedDept: recommendation.department
-                })
-            });
-            if (resp.ok) {
-                var _data_data;
-                const data = await resp.json();
-                message.success(`Ticket created: ${(data === null || data === void 0 ? void 0 : (_data_data = data.data) === null || _data_data === void 0 ? void 0 : _data_data.ticket_id) || 'OK'}`);
-            } else message.error('Failed to create ticket');
-        } catch  {
-            message.error('Failed to create ticket');
-        }
-    }, [
-        message
-    ]);
+    }, []);
+    const handleLegendToggle = (0, _react.useCallback)((cat)=>{
+        var _graphRef_current;
+        setVisibleCategories((prev)=>{
+            const next = new Set(prev);
+            if (next.has(cat)) next.delete(cat);
+            else next.add(cat);
+            return next;
+        });
+        (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.toggleCategory(cat);
+    }, []);
+    const handleLegendHighlight = (0, _react.useCallback)((cat)=>{
+        var _graphRef_current;
+        (_graphRef_current = graphRef.current) === null || _graphRef_current === void 0 || _graphRef_current.applyHighlight(cat);
+    }, []);
     const lastQueryText = (0, _react.useMemo)(()=>{
         const lastUserMsg = [
             ...messages
@@ -8140,23 +12011,9 @@ const KnowledgeQA = ()=>{
         messages
     ]);
     const handleBFFSend = (0, _react.useCallback)(async (query)=>{
-        const history = _agentStore.useAgentStore.getState().messages.filter((m)=>m.role === 'user' || m.role === 'assistant').slice(-4).map((m)=>`${m.role === 'user' ? 'User' : 'System'}: ${m.content.slice(0, 100)}`);
-        try {
-            const params = new URLSearchParams({
-                query,
-                history: JSON.stringify(history)
-            });
-            const res = await fetch(`/api/rewrite?${params.toString()}`);
-            if (res.ok) {
-                const { rewrittenQuery } = await res.json();
-                await sendMessage(query, rewrittenQuery);
-            } else throw new Error('BFF unreachable');
-        } catch (e) {
-            console.warn('BFF unavailable, sending original query directly.', e);
-            await sendMessage(query);
-        }
+        await sendUnifiedMessage(query);
     }, [
-        sendMessage
+        sendUnifiedMessage
     ]);
     const [apiHealthy, setApiHealthy] = (0, _react.useState)(null);
     const intervalRef = (0, _react.useRef)();
@@ -8173,8 +12030,8 @@ const KnowledgeQA = ()=>{
     }, []);
     return (0, _jsxdevruntime.jsxDEV)(_procomponents.PageContainer, {
         header: {
-            title: '知识图谱问答',
-            subTitle: '知识图谱风险分析引擎'
+            title: '协同治理',
+            subTitle: '协同治理引擎'
         },
         children: [
             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8192,7 +12049,7 @@ const KnowledgeQA = ()=>{
                         onToggle: ()=>setSidebarCollapsed(!sidebarCollapsed)
                     }, void 0, false, {
                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                        lineNumber: 355,
+                        lineNumber: 482,
                         columnNumber: 9
                     }, this),
                     (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8248,7 +12105,7 @@ const KnowledgeQA = ()=>{
                                                             opacity: "0.3"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 389,
+                                                            lineNumber: 516,
                                                             columnNumber: 19
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)("circle", {
@@ -8258,7 +12115,7 @@ const KnowledgeQA = ()=>{
                                                             fill: "#ffffff"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 390,
+                                                            lineNumber: 517,
                                                             columnNumber: 19
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)("circle", {
@@ -8268,7 +12125,7 @@ const KnowledgeQA = ()=>{
                                                             fill: "#10B981"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 391,
+                                                            lineNumber: 518,
                                                             columnNumber: 19
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)("circle", {
@@ -8278,7 +12135,7 @@ const KnowledgeQA = ()=>{
                                                             fill: "#F59E0B"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 392,
+                                                            lineNumber: 519,
                                                             columnNumber: 19
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)("line", {
@@ -8290,7 +12147,7 @@ const KnowledgeQA = ()=>{
                                                             strokeWidth: "1.5"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 393,
+                                                            lineNumber: 520,
                                                             columnNumber: 19
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)("line", {
@@ -8302,7 +12159,7 @@ const KnowledgeQA = ()=>{
                                                             strokeWidth: "1.5"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 394,
+                                                            lineNumber: 521,
                                                             columnNumber: 19
                                                         }, this),
                                                         (0, _jsxdevruntime.jsxDEV)("line", {
@@ -8314,18 +12171,18 @@ const KnowledgeQA = ()=>{
                                                             strokeWidth: "1.5"
                                                         }, void 0, false, {
                                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                            lineNumber: 395,
+                                                            lineNumber: 522,
                                                             columnNumber: 19
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                    lineNumber: 388,
+                                                    lineNumber: 515,
                                                     columnNumber: 17
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                lineNumber: 376,
+                                                lineNumber: 503,
                                                 columnNumber: 15
                                             }, this),
                                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8341,7 +12198,7 @@ const KnowledgeQA = ()=>{
                                                         children: "WindEye"
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                        lineNumber: 399,
+                                                        lineNumber: 526,
                                                         columnNumber: 17
                                                     }, this),
                                                     (0, _jsxdevruntime.jsxDEV)("p", {
@@ -8353,19 +12210,19 @@ const KnowledgeQA = ()=>{
                                                         children: "Knowledge Graph Recommendation Engine"
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                        lineNumber: 410,
+                                                        lineNumber: 537,
                                                         columnNumber: 17
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                lineNumber: 398,
+                                                lineNumber: 525,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                        lineNumber: 375,
+                                        lineNumber: 502,
                                         columnNumber: 13
                                     }, this),
                                     (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8392,7 +12249,7 @@ const KnowledgeQA = ()=>{
                                                     }
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                    lineNumber: 418,
+                                                    lineNumber: 545,
                                                     columnNumber: 17
                                                 }, this),
                                                 (0, _jsxdevruntime.jsxDEV)("span", {
@@ -8403,24 +12260,24 @@ const KnowledgeQA = ()=>{
                                                     children: apiHealthy === null ? '检测中' : apiHealthy ? 'API 在线' : 'API 离线'
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                    lineNumber: 429,
+                                                    lineNumber: 556,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "src/pages/KnowledgeQA/index.tsx",
-                                            lineNumber: 417,
+                                            lineNumber: 544,
                                             columnNumber: 15
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                        lineNumber: 416,
+                                        lineNumber: 543,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                lineNumber: 363,
+                                lineNumber: 490,
                                 columnNumber: 11
                             }, this),
                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8458,7 +12315,7 @@ const KnowledgeQA = ()=>{
                                                 onClearGraphInject: ()=>setGraphInjectedEntity(null)
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                lineNumber: 460,
+                                                lineNumber: 587,
                                                 columnNumber: 15
                                             }, this),
                                             clarifyMessage && (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8482,7 +12339,7 @@ const KnowledgeQA = ()=>{
                                                         children: "Needs Clarification"
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                        lineNumber: 486,
+                                                        lineNumber: 613,
                                                         columnNumber: 19
                                                     }, this),
                                                     (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8492,19 +12349,19 @@ const KnowledgeQA = ()=>{
                                                         children: clarifyMessage
                                                     }, void 0, false, {
                                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                        lineNumber: 495,
+                                                        lineNumber: 622,
                                                         columnNumber: 19
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                lineNumber: 474,
+                                                lineNumber: 601,
                                                 columnNumber: 17
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                        lineNumber: 447,
+                                        lineNumber: 574,
                                         columnNumber: 13
                                     }, this),
                                     (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8524,40 +12381,95 @@ const KnowledgeQA = ()=>{
                                                     padding: '10px 16px',
                                                     borderBottom: '1px solid #f1f5f9',
                                                     display: 'flex',
+                                                    flexDirection: 'column',
                                                     alignItems: 'center',
-                                                    justifyContent: 'center',
                                                     background: 'rgba(255, 255, 255, 0.5)',
-                                                    backdropFilter: 'blur(10px)'
+                                                    backdropFilter: 'blur(10px)',
+                                                    flexShrink: 0
                                                 },
-                                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Segmented, {
-                                                    options: [
-                                                        {
-                                                            label: '知识图谱',
-                                                            value: 'graph'
+                                                children: [
+                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 8
                                                         },
-                                                        {
-                                                            label: '风险报告',
-                                                            value: 'risk'
-                                                        }
-                                                    ],
-                                                    value: activeRightPanel,
-                                                    onChange: (val)=>_agentStore.useAgentStore.setState({
-                                                            activeRightPanel: val
-                                                        }),
-                                                    size: "middle",
-                                                    style: {
-                                                        background: '#f1f5f9',
-                                                        padding: '2px',
-                                                        borderRadius: '10px'
-                                                    }
-                                                }, void 0, false, {
-                                                    fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                    lineNumber: 524,
-                                                    columnNumber: 17
-                                                }, this)
-                                            }, void 0, false, {
+                                                        children: [
+                                                            (0, _jsxdevruntime.jsxDEV)(_antd.Segmented, {
+                                                                options: [
+                                                                    {
+                                                                        label: '图谱视图',
+                                                                        value: 'graph'
+                                                                    },
+                                                                    {
+                                                                        label: '治理报告',
+                                                                        value: 'risk'
+                                                                    },
+                                                                    {
+                                                                        label: '合规分析',
+                                                                        value: 'compliance'
+                                                                    }
+                                                                ],
+                                                                value: activeRightPanel,
+                                                                onChange: (val)=>_agentStore.useAgentStore.setState({
+                                                                        activeRightPanel: val
+                                                                    }),
+                                                                size: "middle",
+                                                                style: {
+                                                                    background: '#f1f5f9',
+                                                                    padding: '2px',
+                                                                    borderRadius: '10px'
+                                                                }
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 653,
+                                                                columnNumber: 19
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)(_antd.Tooltip, {
+                                                                title: `Agent 调试日志${agentTraces.length > 0 ? ` (${agentTraces.length})` : ''}`,
+                                                                children: (0, _jsxdevruntime.jsxDEV)(_antd.Button, {
+                                                                    size: "small",
+                                                                    type: "text",
+                                                                    icon: (0, _jsxdevruntime.jsxDEV)(_icons.BugOutlined, {}, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                        lineNumber: 674,
+                                                                        columnNumber: 29
+                                                                    }, void 0),
+                                                                    onClick: ()=>setTracePanelVisible(true),
+                                                                    style: {
+                                                                        color: agentTraces.length > 0 ? '#fa8c16' : '#94a3b8',
+                                                                        borderRadius: 6
+                                                                    }
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                    lineNumber: 671,
+                                                                    columnNumber: 21
+                                                                }, this)
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 670,
+                                                                columnNumber: 19
+                                                            }, this)
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                        lineNumber: 652,
+                                                        columnNumber: 17
+                                                    }, this),
+                                                    activeRightPanel === 'graph' && graphStats && (0, _jsxdevruntime.jsxDEV)(_LegendPanel.default, {
+                                                        stats: graphStats,
+                                                        visibleCategories: visibleCategories,
+                                                        onToggle: handleLegendToggle,
+                                                        onHighlight: handleLegendHighlight
+                                                    }, void 0, false, {
+                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                        lineNumber: 684,
+                                                        columnNumber: 19
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
                                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                lineNumber: 513,
+                                                lineNumber: 640,
                                                 columnNumber: 15
                                             }, this),
                                             (0, _jsxdevruntime.jsxDEV)("div", {
@@ -8570,56 +12482,530 @@ const KnowledgeQA = ()=>{
                                                     report: riskReport,
                                                     stages: riskStages,
                                                     community: riskCommunity,
+                                                    entityCommunityMap: riskEntityCommunityMap,
                                                     isLoading: isLoading,
                                                     error: error,
                                                     onJumpToGraph: handleJumpToGraph,
-                                                    onAddMonitor: handleAddMonitor,
-                                                    onGenerateTicket: handleGenerateTicket,
                                                     onRetry: retryRiskQuery,
-                                                    queryText: lastQueryText
+                                                    queryText: lastQueryText,
+                                                    currentSubgraph: currentSubgraph,
+                                                    resolvedEntities: resolvedEntities,
+                                                    riskScores: riskScores,
+                                                    governancePlan: governancePlan,
+                                                    complianceScores: complianceScores
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                    lineNumber: 544,
+                                                    lineNumber: 695,
+                                                    columnNumber: 19
+                                                }, this) : activeRightPanel === 'compliance' ? (0, _jsxdevruntime.jsxDEV)(_ComplianceAnalysisPanel.default, {
+                                                    report: riskReport,
+                                                    currentSubgraph: currentSubgraph,
+                                                    isLoading: isLoading,
+                                                    onJumpToGraph: handleJumpToGraph,
+                                                    complianceIndicators: complianceIndicators
+                                                }, void 0, false, {
+                                                    fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                    lineNumber: 712,
                                                     columnNumber: 19
                                                 }, this) : (0, _jsxdevruntime.jsxDEV)(_EnhancedGraphPanel.EnhancedGraphPanel, {
                                                     ref: graphRef,
                                                     subgraph: currentSubgraph,
                                                     alignmentFeatures: alignmentFeatures,
+                                                    entityCommunityMap: riskEntityCommunityMap,
                                                     onNodeDoubleClick: handleNodeDoubleClick,
                                                     onNodeHover: (nodeId)=>setHighlightedEntity(nodeId),
-                                                    highlightedEntity: highlightedEntity
+                                                    highlightedEntity: highlightedEntity,
+                                                    onNodeClick: handleNodeClick,
+                                                    onCanvasClick: handleCanvasClick,
+                                                    onStatsChange: setGraphStats
                                                 }, void 0, false, {
                                                     fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                    lineNumber: 557,
+                                                    lineNumber: 720,
                                                     columnNumber: 19
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                                lineNumber: 542,
+                                                lineNumber: 693,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                                        lineNumber: 501,
+                                        lineNumber: 628,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                                lineNumber: 437,
+                                lineNumber: 564,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "src/pages/KnowledgeQA/index.tsx",
-                        lineNumber: 361,
+                        lineNumber: 488,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                lineNumber: 344,
+                lineNumber: 471,
+                columnNumber: 7
+            }, this),
+            (0, _jsxdevruntime.jsxDEV)(_antd.Drawer, {
+                title: null,
+                placement: "right",
+                width: 380,
+                open: drawerNode !== null,
+                onClose: handleDrawerClose,
+                closable: true,
+                styles: {
+                    body: {
+                        padding: 0
+                    }
+                },
+                maskStyle: {
+                    background: 'rgba(0,0,0,0.05)'
+                },
+                children: drawerNode && (()=>{
+                    const subgraph = _agentStore.useAgentStore.getState().currentSubgraph;
+                    const nodeType = drawerNode.type || '';
+                    const typeColor = _graphStyles.NODE_TYPE_COLORS[nodeType] || '#8c8c8c';
+                    const typeLabel = _graphStyles.NODE_TYPE_LABELS[nodeType] || nodeType || '未知';
+                    const riskLevel = drawerNode.risk_level;
+                    const rv = riskLevel ? _graphStyles.RISK_LEVEL_VISUAL[riskLevel] : null;
+                    const connectedEdges = ((subgraph === null || subgraph === void 0 ? void 0 : subgraph.edges) || []).filter((e)=>String(e.source) === String(drawerNode.id) || String(e.target) === String(drawerNode.id));
+                    const neighborIds = new Set();
+                    connectedEdges.forEach((e)=>{
+                        const src = String(e.source);
+                        const tgt = String(e.target);
+                        if (src !== String(drawerNode.id)) neighborIds.add(src);
+                        if (tgt !== String(drawerNode.id)) neighborIds.add(tgt);
+                    });
+                    const neighborNodes = ((subgraph === null || subgraph === void 0 ? void 0 : subgraph.nodes) || []).filter((n)=>neighborIds.has(String(n.id)));
+                    const displayName = drawerNode.title || drawerNode.zh_name || drawerNode.name || drawerNode.id;
+                    const attributeRows = getNodeAttributes(drawerNode);
+                    return (0, _jsxdevruntime.jsxDEV)("div", {
+                        children: [
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    padding: '20px 24px 16px',
+                                    borderBottom: '1px solid #f1f5f9'
+                                },
+                                children: [
+                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            fontSize: 18,
+                                            fontWeight: 700,
+                                            color: '#0f172a',
+                                            lineHeight: 1.3,
+                                            marginBottom: 10
+                                        },
+                                        children: displayName
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                        lineNumber: 779,
+                                        columnNumber: 17
+                                    }, this),
+                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            display: 'flex',
+                                            gap: 8,
+                                            flexWrap: 'wrap'
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)("span", {
+                                                style: {
+                                                    display: 'inline-block',
+                                                    padding: '2px 10px',
+                                                    borderRadius: 6,
+                                                    fontSize: 12,
+                                                    fontWeight: 600,
+                                                    color: typeColor,
+                                                    background: `${typeColor}12`,
+                                                    border: `1px solid ${typeColor}30`
+                                                },
+                                                children: typeLabel
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 783,
+                                                columnNumber: 19
+                                            }, this),
+                                            rv && (0, _jsxdevruntime.jsxDEV)("span", {
+                                                style: {
+                                                    display: 'inline-block',
+                                                    padding: '2px 10px',
+                                                    borderRadius: 6,
+                                                    fontSize: 12,
+                                                    fontWeight: 600,
+                                                    color: rv.border,
+                                                    background: rv.bg,
+                                                    border: `1px solid ${rv.border}40`
+                                                },
+                                                children: rv.label
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 790,
+                                                columnNumber: 21
+                                            }, this),
+                                            drawerNode.rating !== undefined && drawerNode.rating !== null && (0, _jsxdevruntime.jsxDEV)("span", {
+                                                style: {
+                                                    fontSize: 12,
+                                                    color: '#64748b',
+                                                    padding: '2px 6px'
+                                                },
+                                                children: [
+                                                    "评分: ",
+                                                    drawerNode.rating
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 798,
+                                                columnNumber: 21
+                                            }, this),
+                                            drawerNode.year && (0, _jsxdevruntime.jsxDEV)("span", {
+                                                style: {
+                                                    fontSize: 12,
+                                                    color: '#64748b',
+                                                    padding: '2px 6px'
+                                                },
+                                                children: drawerNode.year
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 803,
+                                                columnNumber: 21
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                        lineNumber: 782,
+                                        columnNumber: 17
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                lineNumber: 778,
+                                columnNumber: 15
+                            }, this),
+                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                style: {
+                                    padding: '16px 24px'
+                                },
+                                children: [
+                                    drawerNode.overview && (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            marginBottom: 20
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    fontSize: 13,
+                                                    fontWeight: 700,
+                                                    color: '#475569',
+                                                    marginBottom: 8,
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: 0.5
+                                                },
+                                                children: "溯源文本"
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 814,
+                                                columnNumber: 21
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    fontSize: 13,
+                                                    color: '#334155',
+                                                    lineHeight: 1.7,
+                                                    maxHeight: 200,
+                                                    overflowY: 'auto',
+                                                    background: '#f8fafc',
+                                                    borderRadius: 8,
+                                                    padding: '10px 12px'
+                                                },
+                                                children: drawerNode.overview.length > 500 ? drawerNode.overview.slice(0, 500) + '...' : drawerNode.overview
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 817,
+                                                columnNumber: 21
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                        lineNumber: 813,
+                                        columnNumber: 19
+                                    }, this),
+                                    attributeRows.length > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            marginBottom: 20
+                                        },
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    fontSize: 13,
+                                                    fontWeight: 700,
+                                                    color: '#475569',
+                                                    marginBottom: 8,
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: 0.5
+                                                },
+                                                children: [
+                                                    "属性信息 (",
+                                                    attributeRows.length,
+                                                    ")"
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 826,
+                                                columnNumber: 21
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    display: 'grid',
+                                                    gap: 8
+                                                },
+                                                children: attributeRows.map((attr)=>(0, _jsxdevruntime.jsxDEV)("div", {
+                                                        style: {
+                                                            display: 'grid',
+                                                            gridTemplateColumns: '92px minmax(0, 1fr)',
+                                                            gap: 10,
+                                                            alignItems: 'start',
+                                                            padding: '8px 10px',
+                                                            borderRadius: 8,
+                                                            background: '#f8fafc',
+                                                            border: '1px solid #eef2f7'
+                                                        },
+                                                        children: [
+                                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                style: {
+                                                                    fontSize: 12,
+                                                                    color: '#64748b',
+                                                                    fontWeight: 600
+                                                                },
+                                                                children: attr.label
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 844,
+                                                                columnNumber: 27
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                style: {
+                                                                    fontSize: 12,
+                                                                    color: '#1e293b',
+                                                                    lineHeight: 1.6,
+                                                                    wordBreak: 'break-word'
+                                                                },
+                                                                children: attr.value
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 847,
+                                                                columnNumber: 27
+                                                            }, this)
+                                                        ]
+                                                    }, attr.key, true, {
+                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                        lineNumber: 831,
+                                                        columnNumber: 25
+                                                    }, this))
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 829,
+                                                columnNumber: 21
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                        lineNumber: 825,
+                                        columnNumber: 19
+                                    }, this),
+                                    neighborNodes.length > 0 && (0, _jsxdevruntime.jsxDEV)("div", {
+                                        children: [
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    fontSize: 13,
+                                                    fontWeight: 700,
+                                                    color: '#475569',
+                                                    marginBottom: 8,
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: 0.5
+                                                },
+                                                children: [
+                                                    "关联实体 (",
+                                                    neighborNodes.length,
+                                                    ")"
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 859,
+                                                columnNumber: 21
+                                            }, this),
+                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                style: {
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: 6
+                                                },
+                                                children: neighborNodes.map((neighbor)=>{
+                                                    const nId = String(neighbor.id);
+                                                    const nType = neighbor.type || '';
+                                                    const nColor = _graphStyles.NODE_TYPE_COLORS[nType] || '#8c8c8c';
+                                                    const nTypeLabel = _graphStyles.NODE_TYPE_LABELS[nType] || nType;
+                                                    const nName = neighbor.title || neighbor.zh_name || neighbor.name || neighbor.id;
+                                                    const relEdge = connectedEdges.find((e)=>String(e.source) === nId || String(e.target) === nId);
+                                                    const relType = (relEdge === null || relEdge === void 0 ? void 0 : relEdge.relation) || '相关';
+                                                    const relLabel = RELATION_TEXT[relType] || _graphStyles.RELATION_LABELS[relType] || relType;
+                                                    return (0, _jsxdevruntime.jsxDEV)("div", {
+                                                        onClick: ()=>handleDrawerJumpToNode(nId, String(nName)),
+                                                        style: {
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 10,
+                                                            padding: '8px 12px',
+                                                            borderRadius: 8,
+                                                            cursor: 'pointer',
+                                                            transition: 'background 0.15s',
+                                                            border: '1px solid #f1f5f9'
+                                                        },
+                                                        onMouseEnter: (e)=>{
+                                                            e.currentTarget.style.background = '#f8fafc';
+                                                        },
+                                                        onMouseLeave: (e)=>{
+                                                            e.currentTarget.style.background = 'transparent';
+                                                        },
+                                                        children: [
+                                                            (0, _jsxdevruntime.jsxDEV)("span", {
+                                                                style: {
+                                                                    width: 8,
+                                                                    height: 8,
+                                                                    borderRadius: '50%',
+                                                                    flexShrink: 0,
+                                                                    background: nColor
+                                                                }
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 887,
+                                                                columnNumber: 29
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                style: {
+                                                                    flex: 1,
+                                                                    minWidth: 0
+                                                                },
+                                                                children: [
+                                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                        style: {
+                                                                            fontSize: 13,
+                                                                            fontWeight: 600,
+                                                                            color: '#1e293b',
+                                                                            overflow: 'hidden',
+                                                                            textOverflow: 'ellipsis',
+                                                                            whiteSpace: 'nowrap'
+                                                                        },
+                                                                        children: String(nName).length > 18 ? String(nName).slice(0, 16) + '...' : nName
+                                                                    }, void 0, false, {
+                                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                        lineNumber: 892,
+                                                                        columnNumber: 31
+                                                                    }, this),
+                                                                    (0, _jsxdevruntime.jsxDEV)("div", {
+                                                                        style: {
+                                                                            fontSize: 11,
+                                                                            color: '#94a3b8'
+                                                                        },
+                                                                        children: [
+                                                                            nTypeLabel,
+                                                                            " · ",
+                                                                            relLabel
+                                                                        ]
+                                                                    }, void 0, true, {
+                                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                        lineNumber: 895,
+                                                                        columnNumber: 31
+                                                                    }, this)
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 891,
+                                                                columnNumber: 29
+                                                            }, this),
+                                                            (0, _jsxdevruntime.jsxDEV)("svg", {
+                                                                width: "12",
+                                                                height: "12",
+                                                                viewBox: "0 0 24 24",
+                                                                fill: "none",
+                                                                stroke: "#94a3b8",
+                                                                strokeWidth: "2",
+                                                                children: (0, _jsxdevruntime.jsxDEV)("path", {
+                                                                    d: "M9 18l6-6-6-6"
+                                                                }, void 0, false, {
+                                                                    fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                    lineNumber: 900,
+                                                                    columnNumber: 31
+                                                                }, this)
+                                                            }, void 0, false, {
+                                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                                lineNumber: 899,
+                                                                columnNumber: 29
+                                                            }, this)
+                                                        ]
+                                                    }, nId, true, {
+                                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                        lineNumber: 876,
+                                                        columnNumber: 27
+                                                    }, this);
+                                                })
+                                            }, void 0, false, {
+                                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                                lineNumber: 862,
+                                                columnNumber: 21
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                        lineNumber: 858,
+                                        columnNumber: 19
+                                    }, this),
+                                    !drawerNode.overview && attributeRows.length === 0 && neighborNodes.length === 0 && (0, _jsxdevruntime.jsxDEV)("div", {
+                                        style: {
+                                            textAlign: 'center',
+                                            padding: 40,
+                                            color: '#94a3b8',
+                                            fontSize: 13
+                                        },
+                                        children: "暂无更多详情"
+                                    }, void 0, false, {
+                                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                                        lineNumber: 911,
+                                        columnNumber: 19
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "src/pages/KnowledgeQA/index.tsx",
+                                lineNumber: 810,
+                                columnNumber: 15
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "src/pages/KnowledgeQA/index.tsx",
+                        lineNumber: 776,
+                        columnNumber: 13
+                    }, this);
+                })()
+            }, void 0, false, {
+                fileName: "src/pages/KnowledgeQA/index.tsx",
+                lineNumber: 740,
+                columnNumber: 7
+            }, this),
+            (0, _jsxdevruntime.jsxDEV)(_AgentTracePanel.default, {
+                traces: agentTraces,
+                visible: tracePanelVisible,
+                onClose: ()=>setTracePanelVisible(false),
+                onClear: ()=>_agentStore.useAgentStore.setState({
+                        agentTraces: []
+                    })
+            }, void 0, false, {
+                fileName: "src/pages/KnowledgeQA/index.tsx",
+                lineNumber: 922,
                 columnNumber: 7
             }, this),
             (0, _jsxdevruntime.jsxDEV)("style", {
@@ -8631,17 +13017,17 @@ const KnowledgeQA = ()=>{
       `
             }, void 0, false, {
                 fileName: "src/pages/KnowledgeQA/index.tsx",
-                lineNumber: 572,
+                lineNumber: 929,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "src/pages/KnowledgeQA/index.tsx",
-        lineNumber: 338,
+        lineNumber: 465,
         columnNumber: 5
     }, this);
 };
-_s(KnowledgeQA, "MqdB0IuAOa03LBm0UlmWAjhx3TI=", false, function() {
+_s(KnowledgeQA, "E2ynosqQ6xu0Tojr2Uj/qOHLYQY=", false, function() {
     return [
         _antd.App.useApp,
         _agentStore.useAgentStore,
@@ -8680,17 +13066,26 @@ if ($RefreshIsReactComponentLike$(module.exports)) {
 __mako_require__.d(exports, "__esModule", {
     value: true
 });
-__mako_require__.d(exports, "useAgentStore", {
-    enumerable: true,
-    get: function() {
+function _export(target, all) {
+    for(var name in all)Object.defineProperty(target, name, {
+        enumerable: true,
+        get: all[name]
+    });
+}
+__mako_require__.e(exports, {
+    normalizeSubgraphEdges: function() {
+        return normalizeSubgraphEdges;
+    },
+    normalizeSubgraphNodes: function() {
+        return normalizeSubgraphNodes;
+    },
+    useAgentStore: function() {
         return useAgentStore;
     }
 });
-var _interop_require_default = __mako_require__("@swc/helpers/_/_interop_require_default");
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
 var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
 var _zustand = __mako_require__("node_modules/zustand/esm/index.mjs");
-var _axios = _interop_require_default._(__mako_require__("node_modules/axios/index.js"));
 var _agent = __mako_require__("src/pages/KnowledgeQA/api/agent.ts");
 var prevRefreshReg;
 var prevRefreshSig;
@@ -8701,6 +13096,305 @@ self.$RefreshReg$ = (type, id)=>{
 };
 self.$RefreshSig$ = _reactrefresh.createSignatureFunctionForTransform;
 const generateSessionId = ()=>`sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const VALID_TYPES = new Set([
+    'COMPANY',
+    'PERSON',
+    'EVENT',
+    'SUB_EVENT',
+    'TIME',
+    'RiskFeature',
+    'RiskFactor',
+    'Action',
+    'Regulation',
+    'Law'
+]);
+function normalizeSubgraphNodes(rawNodes) {
+    return rawNodes.map((n)=>{
+        if (n.type && VALID_TYPES.has(n.type)) {
+            const props = n.properties || {};
+            return {
+                ...n,
+                properties: props,
+                raw: n,
+                entityType: n.entityType || n.type,
+                entity_type: n.entity_type || n.type,
+                label: n.label || n.title || n.name || String(n.id),
+                compliance_score: n.compliance_score ?? props.compliance_score
+            };
+        }
+        let nodeType = '';
+        if (n.labels && Array.isArray(n.labels) && n.labels.length > 0) {
+            for (const label of n.labels){
+                const upper = typeof label === 'string' ? label.toUpperCase() : '';
+                if (upper === 'COMPANY' || upper === 'SUBJECT') {
+                    nodeType = 'COMPANY';
+                    break;
+                }
+                if (upper === 'PERSON') {
+                    nodeType = 'PERSON';
+                    break;
+                }
+                if (upper === 'EVENT') {
+                    nodeType = 'EVENT';
+                    break;
+                }
+                if (upper === 'SUB_EVENT') {
+                    nodeType = 'SUB_EVENT';
+                    break;
+                }
+                if (upper === 'TIME') {
+                    nodeType = 'TIME';
+                    break;
+                }
+                if (label === 'RiskFeature' || label === 'RiskFactor' || label === 'Action' || label === 'Regulation' || label === 'Law') {
+                    nodeType = label;
+                    break;
+                }
+            }
+            if (!nodeType) {
+                const firstLabel = String(n.labels[0]);
+                if (VALID_TYPES.has(firstLabel)) nodeType = firstLabel;
+                else {
+                    const upper = firstLabel.toUpperCase();
+                    if (VALID_TYPES.has(upper)) nodeType = upper;
+                }
+            }
+        }
+        if (!nodeType && typeof n.type === 'string') {
+            const upper = String(n.type).toUpperCase();
+            nodeType = upper === 'COMPANY' || upper === 'SUBJECT' ? 'COMPANY' : upper === 'PERSON' ? 'PERSON' : upper === 'EVENT' ? 'EVENT' : upper === 'FEATURE' ? 'RiskFeature' : upper === 'REGULATION' ? 'Regulation' : VALID_TYPES.has(n.type) ? n.type : VALID_TYPES.has(upper) ? upper : n.type;
+        }
+        if (!nodeType && n.entity_type && VALID_TYPES.has(n.entity_type)) nodeType = n.entity_type;
+        if (!nodeType) {
+            const fallbackName = String(n.name || n.title || n.label || n.id || '');
+            const upper = fallbackName.toUpperCase();
+            if (/公司|集团|有限|股份|银行|基金|证券|保险|CO|LTD|INC|CORP/i.test(upper)) nodeType = 'COMPANY';
+            else if (/风险|事件|违约|违规|监管|处罚/i.test(upper)) nodeType = 'RiskFeature';
+            else nodeType = 'COMPANY';
+        }
+        if (!VALID_TYPES.has(nodeType)) {
+            console.warn('[normalizeSubgraphNodes] Resolved type not in VALID_TYPES, forcing COMPANY:', {
+                id: n.id,
+                name: n.name,
+                title: n.title,
+                resolvedType: nodeType,
+                rawType: n.type,
+                rawEntityType: n.entity_type,
+                labels: n.labels
+            });
+            nodeType = 'COMPANY';
+        }
+        const props = n.properties || {};
+        const normalizedType = nodeType;
+        return {
+            id: String(n.id),
+            type: normalizedType,
+            entityType: normalizedType,
+            entity_type: normalizedType,
+            properties: props,
+            raw: n,
+            label: n.label || n.title || props.title || props.name || props.COMPANY_NM || n.name || String(n.id),
+            title: n.title || props.title || props.name || props.COMPANY_NM || n.label || n.id,
+            name: n.name || props.name || props.COMPANY_NM || props.title || n.label || n.id,
+            zh_name: n.zh_name || props.zh_name || props.name,
+            overview: n.overview || props.overview || props.RISK_INFO || '',
+            popularity: n.popularity ?? props.popularity,
+            rating: n.rating ?? props.rating,
+            year: n.year ?? props.year,
+            risk_level: (n.risk_level || props.risk_level || '').toString().toLowerCase() || undefined,
+            compliance_score: n.compliance_score ?? props.compliance_score
+        };
+    });
+}
+function normalizeSubgraphEdges(rawEdges) {
+    return rawEdges.map((e)=>({
+            id: e.id || e.element_id || e.elementId,
+            source: String(e.source || e.start || ''),
+            target: String(e.target || e.end || ''),
+            relation: e.relation || e.label || e.type || 'RELATED',
+            confidence: e.confidence
+        }));
+}
+const BACKEND_STAGE_TO_FRONTEND = {
+    intent: 'planning',
+    entity_resolution: 'planning',
+    subgraph: 'retrieving',
+    graph_analytics: 'entity_stats',
+    community_detection: 'community',
+    risk_analysis: 'analyzing',
+    compliance: 'compliance',
+    scoring: 'analyzing',
+    governance: 'analyzing',
+    reporting: 'reporting'
+};
+function mapBackendStage(backendStage) {
+    return BACKEND_STAGE_TO_FRONTEND[backendStage] || 'retrieving';
+}
+function mergeRiskReport(prev, patch) {
+    return {
+        ...prev || {},
+        ...patch,
+        report_id: patch.report_id ?? (prev === null || prev === void 0 ? void 0 : prev.report_id),
+        generated_at: patch.generated_at ?? (prev === null || prev === void 0 ? void 0 : prev.generated_at),
+        executive_summary: patch.executive_summary ?? (prev === null || prev === void 0 ? void 0 : prev.executive_summary),
+        markdown_report: patch.markdown_report ?? (prev === null || prev === void 0 ? void 0 : prev.markdown_report),
+        echarts_config: patch.echarts_config ?? (prev === null || prev === void 0 ? void 0 : prev.echarts_config),
+        entity_stats: patch.entity_stats ?? (prev === null || prev === void 0 ? void 0 : prev.entity_stats),
+        community_info: patch.community_info ?? (prev === null || prev === void 0 ? void 0 : prev.community_info),
+        risk_paths: patch.risk_paths ?? (prev === null || prev === void 0 ? void 0 : prev.risk_paths) ?? [],
+        anomaly_findings: patch.anomaly_findings ?? (prev === null || prev === void 0 ? void 0 : prev.anomaly_findings) ?? [],
+        compliance_matches: patch.compliance_matches ?? (prev === null || prev === void 0 ? void 0 : prev.compliance_matches) ?? [],
+        risk_scores: patch.risk_scores ?? (prev === null || prev === void 0 ? void 0 : prev.risk_scores),
+        governance_plan: patch.governance_plan ?? (prev === null || prev === void 0 ? void 0 : prev.governance_plan),
+        evidence_chains: patch.evidence_chains ?? (prev === null || prev === void 0 ? void 0 : prev.evidence_chains)
+    };
+}
+function compactText(value, fallback = '') {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+        return JSON.stringify(value);
+    } catch  {
+        return fallback;
+    }
+}
+function getSubgraphNodeName(node) {
+    var _node_properties, _node_properties1;
+    return compactText((node === null || node === void 0 ? void 0 : node.title) || (node === null || node === void 0 ? void 0 : node.zh_name) || (node === null || node === void 0 ? void 0 : node.name) || (node === null || node === void 0 ? void 0 : node.label) || (node === null || node === void 0 ? void 0 : (_node_properties = node.properties) === null || _node_properties === void 0 ? void 0 : _node_properties.name) || (node === null || node === void 0 ? void 0 : (_node_properties1 = node.properties) === null || _node_properties1 === void 0 ? void 0 : _node_properties1.COMPANY_NM) || (node === null || node === void 0 ? void 0 : node.id), '未知实体');
+}
+function buildGraphQaAnswer(query, subgraph) {
+    const nodes = (subgraph === null || subgraph === void 0 ? void 0 : subgraph.nodes) || [];
+    const edges = (subgraph === null || subgraph === void 0 ? void 0 : subgraph.edges) || [];
+    if (nodes.length === 0) return '我暂时没有在图谱里找到明确匹配的实体或关系。可以把主体名称写完整一些，例如使用公司全称，我再帮你查。';
+    const nodeById = new Map(nodes.map((node)=>[
+            String(node.id),
+            node
+        ]));
+    const degree = new Map();
+    edges.forEach((edge)=>{
+        const source = String(edge.source);
+        const target = String(edge.target);
+        degree.set(source, (degree.get(source) || 0) + 1);
+        degree.set(target, (degree.get(target) || 0) + 1);
+    });
+    const center = [
+        ...nodes
+    ].sort((a, b)=>(degree.get(String(b.id)) || 0) - (degree.get(String(a.id)) || 0))[0];
+    const centerId = center ? String(center.id) : '';
+    const centerName = center ? getSubgraphNodeName(center) : '查询主体';
+    const directEdges = edges.filter((edge)=>String(edge.source) === centerId || String(edge.target) === centerId);
+    const related = directEdges.map((edge)=>{
+        const otherId = String(edge.source) === centerId ? String(edge.target) : String(edge.source);
+        const other = nodeById.get(otherId);
+        return {
+            name: getSubgraphNodeName(other),
+            relation: compactText(edge.relation || edge.type || edge.label, '关联')
+        };
+    }).filter((item)=>item.name && item.name !== '未知实体');
+    const lines = [];
+    lines.push(`已根据你的问题查询到相关子图：${nodes.length} 个节点、${edges.length} 条关系。`);
+    if (related.length > 0) {
+        lines.push(`${centerName} 的直接关联包括：`);
+        related.slice(0, 8).forEach((item, index)=>{
+            lines.push(`${index + 1}. ${item.name}（${item.relation}）`);
+        });
+        if (related.length > 8) lines.push(`还有 ${related.length - 8} 个关联实体，可在右侧图谱继续查看。`);
+    } else {
+        const names = nodes.slice(0, 8).map(getSubgraphNodeName).join('、');
+        lines.push(`本次命中的实体包括：${names}。`);
+    }
+    if (/简称|缩写/.test(query) || /^[\u4e00-\u9fa5]{2,4}$/.test(query.trim())) {
+        lines.push('');
+        lines.push('如果这是公司简称，可能对应多个图谱实体。你可以补充公司全称、地区或关联对象，我可以进一步精确定位。');
+    }
+    return lines.join('\n');
+}
+function buildPartialRiskAnswer(query, report, subgraph) {
+    var _subgraph_nodes, _report_subgraph_summary, _subgraph_edges, _report_subgraph_summary1;
+    const paths = (report === null || report === void 0 ? void 0 : report.risk_paths) || [];
+    const anomalies = (report === null || report === void 0 ? void 0 : report.anomaly_findings) || [];
+    const compliance = (report === null || report === void 0 ? void 0 : report.compliance_matches) || [];
+    const nodes = (subgraph === null || subgraph === void 0 ? void 0 : (_subgraph_nodes = subgraph.nodes) === null || _subgraph_nodes === void 0 ? void 0 : _subgraph_nodes.length) || (report === null || report === void 0 ? void 0 : (_report_subgraph_summary = report.subgraph_summary) === null || _report_subgraph_summary === void 0 ? void 0 : _report_subgraph_summary.node_count) || 0;
+    const edges = (subgraph === null || subgraph === void 0 ? void 0 : (_subgraph_edges = subgraph.edges) === null || _subgraph_edges === void 0 ? void 0 : _subgraph_edges.length) || (report === null || report === void 0 ? void 0 : (_report_subgraph_summary1 = report.subgraph_summary) === null || _report_subgraph_summary1 === void 0 ? void 0 : _report_subgraph_summary1.edge_count) || 0;
+    const lines = [];
+    lines.push('已按“协同治理社区报告”进入分析流程。');
+    if (nodes || edges) lines.push(`当前已检索到 ${nodes} 个节点、${edges} 条关系，右侧已切换到治理报告面板。`);
+    if (paths.length || anomalies.length || compliance.length) lines.push(`已识别 ${paths.length} 条风险传导路径、${anomalies.length} 个异常发现、${compliance.length} 条合规匹配。`);
+    else lines.push('目前证据仍在汇总中，若图谱证据不足，报告会优先展示已确认的主体、群体和关系。');
+    if (/简称|缩写|鑫达|华创/.test(query)) lines.push('如果主体名称是简称，建议补充公司全称以提升实体对齐准确度。');
+    return lines.join('\n');
+}
+function extractAmbiguousShortMention(query) {
+    var _match_;
+    if (/有限公司|有限责任|股份|集团|控股|投资管理|金融服务|证券|银行|保险/.test(query)) return null;
+    const match = query.match(/^\s*([\u4e00-\u9fa5]{2,4})(?:公司)?(?:\s|与|和|的|有|关|查|风险|合规)/);
+    const mention = match === null || match === void 0 ? void 0 : (_match_ = match[1]) === null || _match_ === void 0 ? void 0 : _match_.trim();
+    if (!mention) return null;
+    const stopWords = new Set([
+        '哪些',
+        '公司',
+        '关系',
+        '关联',
+        '查询',
+        '风险',
+        '合规',
+        '这个',
+        '那个'
+    ]);
+    return stopWords.has(mention) ? null : mention;
+}
+function buildClarifyAnswer(mention) {
+    return `你说的“${mention}”可能是公司简称，图谱里可能存在多个相近实体。为了避免把主体识别错，请补充一个更明确的名称，例如公司全称、地区，或直接输入类似“${mention}投资管理有限公司”。`;
+}
+function buildReportAnswer(report) {
+    var _report_risk_scores, _report_risk_scores1, _report_risk_scores2, _report_subgraph_summary, _report_subgraph_summary1;
+    const paths = report.risk_paths || [];
+    const anomalies = report.anomaly_findings || [];
+    const compliance = report.compliance_matches || [];
+    const recommendations = report.recommendations || [];
+    const scoreLevel = ((_report_risk_scores = report.risk_scores) === null || _report_risk_scores === void 0 ? void 0 : _report_risk_scores.level) || report.overall_risk_level;
+    const scoreValue = ((_report_risk_scores1 = report.risk_scores) === null || _report_risk_scores1 === void 0 ? void 0 : _report_risk_scores1.final_overall) ?? ((_report_risk_scores2 = report.risk_scores) === null || _report_risk_scores2 === void 0 ? void 0 : _report_risk_scores2.base_overall);
+    const lines = [];
+    lines.push(report.executive_summary || '协同治理分析已完成。');
+    lines.push('');
+    lines.push(`总体研判：${scoreLevel || '待评估'}${scoreValue !== undefined && scoreValue !== null ? `，综合评分 ${scoreValue}` : ''}`);
+    lines.push(`图谱证据：${((_report_subgraph_summary = report.subgraph_summary) === null || _report_subgraph_summary === void 0 ? void 0 : _report_subgraph_summary.node_count) ?? '-'} 个节点、${((_report_subgraph_summary1 = report.subgraph_summary) === null || _report_subgraph_summary1 === void 0 ? void 0 : _report_subgraph_summary1.edge_count) ?? '-'} 条关系；识别 ${paths.length} 条风险路径、${anomalies.length} 个异常发现、${compliance.length} 条合规匹配。`);
+    if (paths.length > 0) {
+        lines.push('');
+        lines.push('风险传导路径：');
+        paths.slice(0, 4).forEach((p, index)=>{
+            const desc = compactText(p.path_description || p.path_text, '暂无路径描述');
+            lines.push(`${index + 1}. [${p.risk_level || 'medium'}] ${desc}`);
+        });
+    }
+    if (anomalies.length > 0) {
+        lines.push('');
+        lines.push('异常关系：');
+        anomalies.slice(0, 3).forEach((a, index)=>{
+            lines.push(`${index + 1}. ${a.anomaly_type || '异常'}：${compactText(a.evidence, '暂无证据说明')}`);
+        });
+    }
+    if (compliance.length > 0) {
+        lines.push('');
+        lines.push('合规风险：');
+        compliance.slice(0, 3).forEach((c, index)=>{
+            const basis = [
+                c.regulation,
+                c.article
+            ].filter(Boolean).join(' ');
+            lines.push(`${index + 1}. ${basis || '相关法规'}：${c.violation || c.suggested_action || '需进一步核验'}`);
+        });
+    }
+    if (recommendations.length > 0) {
+        lines.push('');
+        lines.push('治理建议：');
+        recommendations.slice(0, 4).forEach((r, index)=>{
+            lines.push(`${index + 1}. ${r.action}（${r.department || '责任部门待定'}，${r.urgency || 'normal'}）`);
+        });
+    }
+    return lines.join('\n').slice(0, 1800);
+}
 const useAgentStore = (0, _zustand.create)((set, get)=>({
         messages: [],
         currentSubgraph: null,
@@ -8714,20 +13408,91 @@ const useAgentStore = (0, _zustand.create)((set, get)=>({
         clarifyMessage: null,
         currentRoute: null,
         activeRightPanel: 'graph',
+        resolvedEntities: [],
+        evidenceChains: null,
+        riskScores: null,
+        governancePlan: null,
         riskReport: null,
         riskStages: [],
         riskCommunity: null,
+        riskEntityCommunityMap: null,
+        complianceScores: null,
+        complianceIndicators: null,
         uploadedFile: null,
         fileUploading: false,
+        agentTraces: [],
         lastRiskQuery: '',
         sendMessage: async (query, rewrittenQuery)=>{
+            return get().sendUnifiedMessage(rewrittenQuery || query);
+        },
+        sendRiskQuery: async (query, communityId, fileContent)=>{
+            set({
+                lastRiskQuery: query
+            });
+            return get().sendUnifiedMessage(query, 'risk_analysis');
+        },
+        sendUnifiedMessage: async (query, intentHint)=>{
             if (get().isLoading) return;
+            const ambiguousMention = !intentHint ? extractAmbiguousShortMention(query) : null;
+            if (ambiguousMention) {
+                const userMsg = {
+                    id: `user_${Date.now()}`,
+                    role: 'user',
+                    content: query,
+                    timestamp: Date.now()
+                };
+                const assistantMsg = {
+                    id: `asst_${Date.now()}`,
+                    role: 'assistant',
+                    content: buildClarifyAnswer(ambiguousMention),
+                    timestamp: Date.now(),
+                    isLoading: false
+                };
+                set((state)=>({
+                        messages: [
+                            ...state.messages,
+                            userMsg,
+                            assistantMsg
+                        ],
+                        currentRoute: 'graph',
+                        activeRightPanel: 'graph',
+                        clarifyMessage: assistantMsg.content
+                    }));
+                return;
+            }
+            if (!intentHint) {
+                const riskKeywords = [
+                    '风险',
+                    '传导',
+                    '合规',
+                    '违规',
+                    '处罚',
+                    '监管',
+                    '担保',
+                    '关联交易',
+                    '资金占用',
+                    '内幕',
+                    '操纵',
+                    '洗钱',
+                    '欺诈',
+                    '违约',
+                    '评级',
+                    '预警',
+                    '治理报告',
+                    '社区报告',
+                    '社区风险',
+                    '群体风险',
+                    '风险报告',
+                    '协同治理'
+                ];
+                if (riskKeywords.some((kw)=>query.includes(kw))) intentHint = 'risk_analysis';
+            }
+            const expectedIntent = intentHint ?? 'graph_qa';
+            const expectsRiskReport = expectedIntent === 'risk_analysis';
             const { sessionId, roundId, messages, uploadedFile } = get();
             set({
                 roundId: roundId + 1
             });
-            let backendQuery = rewrittenQuery || query;
-            if (uploadedFile) backendQuery = `[上传文件: ${uploadedFile.filename}]\n文件内容:\n${uploadedFile.text}\n\n问题: ${backendQuery}`;
             const userMsg = {
                 id: `user_${Date.now()}`,
                 role: 'user',
@@ -8751,236 +13516,270 @@ const useAgentStore = (0, _zustand.create)((set, get)=>({
                     isLoading: true,
                     error: null,
                     pendingRecommendations: null,
-                    clarifyMessage: null
-                }));
-            let route = 'graph';
-            try {
-                const routeResp = await _axios.default.post('/api/v1/chat/route', {
-                    query: backendQuery
-                });
-                route = routeResp.data.route;
-                if (route === 'clarify') {
-                    set((state)=>({
-                            messages: state.messages.map((m)=>m.id === tempId ? {
-                                    ...m,
-                                    isLoading: false,
-                                    content: routeResp.data.clarify_message ?? 'Sorry, I didn\'t fully understand. Could you provide more specific criteria?'
-                                } : m),
-                            clarifyMessage: routeResp.data.clarify_message ?? null,
-                            isLoading: false
-                        }));
-                    return;
-                }
-            } catch (err) {
-                console.warn('[Store] /route failed, defaulting to graph:', err);
-            }
-            if (route === 'risk') {
-                set({
-                    currentRoute: 'risk',
-                    activeRightPanel: 'risk',
+                    resolvedEntities: [],
+                    evidenceChains: null,
+                    riskScores: null,
+                    governancePlan: null,
                     riskReport: null,
                     riskStages: [],
                     riskCommunity: null,
-                    isLoading: true,
-                    currentSubgraph: null
-                });
-                await get().sendRiskQuery(backendQuery);
-                return;
-            }
-            set({
-                activeRightPanel: 'graph'
-            });
-            const history = messages.filter((m)=>m.role === 'user').map((m)=>m.content);
-            (0, _agent.sendChatStream)({
-                query: backendQuery,
-                history,
-                sessionId,
-                roundId: roundId + 1
-            }, {
-                onStage: (stage)=>{
-                    set((state)=>{
-                        const isStructured = typeof stage !== 'string';
-                        const stageObj = isStructured ? stage : null;
-                        const contentStr = isStructured ? `[${stageObj.stage_name}] ${stageObj.agent_action}` : stage;
-                        return {
-                            messages: state.messages.map((m)=>m.id === tempId ? {
-                                    ...m,
-                                    thinkingStatus: contentStr,
-                                    pipelineStages: isStructured ? (()=>{
-                                        const prev = m.pipelineStages || [];
-                                        const idx = prev.findIndex((ps)=>ps.stage_id === stageObj.stage_id);
-                                        if (idx >= 0) {
-                                            const updated = [
-                                                ...prev
-                                            ];
-                                            updated[idx] = {
-                                                ...stageObj,
-                                                status: stageObj.progress >= 1.0 ? 'done' : 'running'
-                                            };
-                                            return updated;
-                                        }
-                                        return [
-                                            ...prev,
-                                            {
-                                                ...stageObj,
-                                                status: stageObj.progress >= 1.0 ? 'done' : 'running'
-                                            }
-                                        ];
-                                    })() : m.pipelineStages
-                                } : m)
-                        };
-                    });
-                },
-                onCards: (cards)=>{
-                    set(()=>({
-                            pendingRecommendations: cards
-                        }));
-                },
-                onGraph: (graph)=>{
-                    set(()=>({
-                            currentSubgraph: graph
-                        }));
-                },
-                onReview: ({ overall, highlights, explanation })=>{
-                    const highlightMap = new Map(highlights.map((h)=>[
-                            h.itemId,
-                            h.highlight
-                        ]));
-                    set((state)=>{
-                        const enrichedRecs = (state.pendingRecommendations ?? []).map((rec)=>({
-                                ...rec,
-                                highlight: highlightMap.get(rec.itemId) ?? rec.highlight ?? ''
-                            }));
-                        const finalOutput = {
-                            overallReasoning: explanation || overall,
-                            recommendations: enrichedRecs,
-                            explanations: highlights.map((h)=>({
-                                    itemId: h.itemId,
-                                    highlight: h.highlight,
-                                    pathIds: []
-                                }))
-                        };
-                        return {
-                            messages: state.messages.map((m)=>m.id === tempId ? {
-                                    ...m,
-                                    content: overall,
-                                    isLoading: false,
-                                    thinkingStatus: undefined,
-                                    data: {
-                                        output: finalOutput
-                                    }
-                                } : m),
-                            pendingRecommendations: null,
-                            isLoading: false,
-                            currentRoute: 'graph'
-                        };
-                    });
-                },
-                onDone: ()=>{
-                    set((state)=>({
-                            pendingRecommendations: null,
-                            isLoading: false,
-                            currentRoute: 'graph',
-                            messages: state.messages.map((m)=>m.id === tempId ? {
-                                    ...m,
-                                    isLoading: false,
-                                    thinkingStatus: undefined
-                                } : m)
-                        }));
-                },
-                onError: (msg)=>{
-                    set((state)=>({
-                            isLoading: false,
-                            pendingRecommendations: null,
-                            error: msg,
-                            currentRoute: 'graph',
-                            messages: state.messages.map((m)=>m.id === tempId ? {
-                                    ...m,
-                                    content: `Error: ${msg}`
-                                } : m)
-                        }));
-                }
-            });
-        },
-        sendRiskQuery: async (query, communityId)=>{
-            const { sessionId, roundId } = get();
-            set({
-                lastRiskQuery: query
-            });
-            const tempId = `asst_${Date.now()}`;
-            const assistantMsg = {
-                id: tempId,
-                role: 'assistant',
-                content: '',
-                timestamp: Date.now(),
-                isLoading: true
-            };
-            set((state)=>({
-                    messages: [
-                        ...state.messages,
-                        assistantMsg
-                    ],
-                    isLoading: true,
-                    error: null
+                    riskEntityCommunityMap: null,
+                    complianceScores: null,
+                    complianceIndicators: null,
+                    currentRoute: expectsRiskReport ? 'risk' : 'graph',
+                    activeRightPanel: expectsRiskReport ? 'risk' : 'graph'
                 }));
-            (0, _agent.sendRiskStream)({
+            (0, _agent.sendUnifiedStream)({
                 query,
+                fileContent: (uploadedFile === null || uploadedFile === void 0 ? void 0 : uploadedFile.text) ?? null,
                 sessionId,
-                roundId,
-                communityId,
-                maxHop: 3
+                roundId: roundId + 1,
+                maxHop: 3,
+                intentHint: intentHint ?? null
             }, {
-                onStage: (stage, content)=>{
+                onStage: (_stage, data)=>{
+                    var _data_data, _data_data1;
+                    const stageName = ((_data_data = data.data) === null || _data_data === void 0 ? void 0 : _data_data.stage_name) || '';
+                    const stageAction = ((_data_data1 = data.data) === null || _data_data1 === void 0 ? void 0 : _data_data1.agent_action) || '';
+                    const frontendStage = mapBackendStage(data.stage || _stage);
                     set((state)=>({
                             riskStages: [
-                                ...state.riskStages.filter((s)=>s.stage !== stage),
+                                ...state.riskStages,
                                 {
-                                    stage: stage,
-                                    content
+                                    stage: frontendStage,
+                                    content: stageAction || stageName
                                 }
                             ],
                             messages: state.messages.map((m)=>m.id === tempId ? {
                                     ...m,
-                                    thinkingStatus: content
+                                    thinkingStatus: stageAction || stageName
                                 } : m)
                         }));
                 },
-                onCommunity: (info)=>{
+                onEntities: (data)=>{
+                    const resolved = data.resolved || [];
                     set({
-                        riskCommunity: info
+                        resolvedEntities: resolved
                     });
                 },
                 onSubgraph: (graph)=>{
-                    set({
-                        currentSubgraph: graph
+                    const rawNodes = graph.nodes || [];
+                    const normalized = {
+                        nodes: normalizeSubgraphNodes(rawNodes),
+                        edges: normalizeSubgraphEdges(graph.edges || []),
+                        paths: graph.paths || []
+                    };
+                    const nodeTypes = [
+                        ...new Set(normalized.nodes.map((n)=>n.type))
+                    ];
+                    console.log(`[agentStore] onSubgraph nodes=${normalized.nodes.length} edges=${normalized.edges.length}`);
+                    console.log('[agentStore] onSubgraph details:', {
+                        paths: normalized.paths.length,
+                        nodeTypes
                     });
+                    if (rawNodes.length > 0) {
+                        console.log('[agentStore] onSubgraph first raw node keys:', Object.keys(rawNodes[0]));
+                        console.log('[agentStore] onSubgraph first raw node:', rawNodes[0]);
+                    }
+                    if (normalized.nodes.length > 0) {
+                        console.log('[agentStore] onSubgraph first normalized node keys:', Object.keys(normalized.nodes[0]));
+                        console.log('[agentStore] onSubgraph first normalized node:', normalized.nodes[0]);
+                    }
+                    const invalid = normalized.nodes.filter((n)=>!VALID_TYPES.has(n.type));
+                    if (invalid.length > 0) console.warn('[agentStore] onSubgraph WARNING: nodes with invalid type after normalization:', invalid.map((n)=>({
+                            id: n.id,
+                            title: n.title,
+                            type: n.type,
+                            entityType: n.entityType,
+                            entity_type: n.entity_type
+                        })));
+                    set({
+                        currentSubgraph: normalized
+                    });
+                },
+                onEntityStats: (stats)=>{
+                    set((state)=>({
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                entity_stats: stats
+                            })
+                        }));
+                },
+                onCommunity: (info)=>{
+                    var _communities, _this, _this1;
+                    console.log('[agentStore] onCommunity:', {
+                        communityCount: (_this = info) === null || _this === void 0 ? void 0 : (_communities = _this.communities) === null || _communities === void 0 ? void 0 : _communities.length,
+                        method: (_this1 = info) === null || _this1 === void 0 ? void 0 : _this1.selected_method
+                    });
+                    set((state)=>({
+                            riskCommunity: info,
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                community_info: info
+                            })
+                        }));
+                },
+                onEntityCommunityMap: (map)=>{
+                    var _entities, _this, _this1;
+                    console.log('[agentStore] onEntityCommunityMap:', {
+                        entityCount: (_this = map) === null || _this === void 0 ? void 0 : (_entities = _this.entities) === null || _entities === void 0 ? void 0 : _entities.length,
+                        unmapped: (_this1 = map) === null || _this1 === void 0 ? void 0 : _this1.unmapped_count
+                    });
+                    set((state)=>({
+                            riskEntityCommunityMap: map
+                        }));
+                },
+                onCandidateRiskPaths: (paths)=>{
+                    const arr = Array.isArray(paths) ? paths : [];
+                    console.log('[agentStore] onCandidateRiskPaths:', {
+                        count: arr.length,
+                        firstPath: arr[0]
+                    });
+                    const subgraphPaths = arr.map((p)=>({
+                            pathId: p.path_id || '',
+                            nodeIds: p.node_ids || [],
+                            edgeIds: p.edge_ids || [],
+                            score: p.confidence ?? 0.7
+                        }));
+                    set((state)=>{
+                        var _state_currentSubgraph;
+                        const currentPaths = ((_state_currentSubgraph = state.currentSubgraph) === null || _state_currentSubgraph === void 0 ? void 0 : _state_currentSubgraph.paths) || [];
+                        const mergedPaths = [
+                            ...currentPaths
+                        ];
+                        for (const sp of subgraphPaths)if (!mergedPaths.some((existing)=>existing.pathId === sp.pathId)) mergedPaths.push(sp);
+                        console.log('[agentStore] onCandidateRiskPaths: merged subgraph.paths count =', mergedPaths.length);
+                        return {
+                            currentSubgraph: state.currentSubgraph ? {
+                                ...state.currentSubgraph,
+                                paths: mergedPaths
+                            } : null
+                        };
+                    });
+                },
+                onRiskPaths: (paths)=>{
+                    const data = paths;
+                    const interpretedArr = Array.isArray(data === null || data === void 0 ? void 0 : data.interpreted_paths) ? data.interpreted_paths : Array.isArray(data) ? data : [];
+                    const mergedArr = Array.isArray(data === null || data === void 0 ? void 0 : data.merged_paths) ? data.merged_paths : interpretedArr;
+                    set((state)=>({
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                risk_paths: interpretedArr
+                            })
+                        }));
+                    if (mergedArr.length === 0) return;
+                    const subgraphPaths = mergedArr.map((p)=>({
+                            pathId: p.path_id || '',
+                            nodeIds: p.node_ids || [],
+                            edgeIds: p.edge_ids || [],
+                            score: p.confidence ?? 0.7
+                        }));
+                    set((state)=>{
+                        var _state_currentSubgraph;
+                        const currentPaths = ((_state_currentSubgraph = state.currentSubgraph) === null || _state_currentSubgraph === void 0 ? void 0 : _state_currentSubgraph.paths) || [];
+                        const newPaths = [
+                            ...currentPaths
+                        ];
+                        for (const sp of subgraphPaths)if (!newPaths.some((existing)=>existing.pathId === sp.pathId)) newPaths.push(sp);
+                        console.log('[agentStore] onRiskPaths: merged into subgraph.paths, count =', newPaths.length);
+                        return {
+                            currentSubgraph: state.currentSubgraph ? {
+                                ...state.currentSubgraph,
+                                paths: newPaths
+                            } : null
+                        };
+                    });
+                },
+                onAnomalyFindings: (anomalies)=>{
+                    set((state)=>{
+                        var _this;
+                        return {
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                anomaly_findings: Array.isArray(anomalies) ? anomalies : ((_this = anomalies) === null || _this === void 0 ? void 0 : _this.anomalies) ?? []
+                            })
+                        };
+                    });
+                },
+                onCompliance: (matches)=>{
+                    set((state)=>{
+                        var _this;
+                        return {
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                compliance_matches: Array.isArray(matches) ? matches : ((_this = matches) === null || _this === void 0 ? void 0 : _this.matches) ?? []
+                            })
+                        };
+                    });
+                },
+                onComplianceScores: (scores)=>{
+                    const scoreMap = scores;
+                    console.log('[agentStore] onComplianceScores keys=%d', Object.keys(scoreMap || {}).length);
+                    set({
+                        complianceScores: scoreMap
+                    });
+                },
+                onComplianceIndicators: (data)=>{
+                    var _this;
+                    const indicators = ((_this = data) === null || _this === void 0 ? void 0 : _this.indicators) || data || [];
+                    console.log('[agentStore] onComplianceIndicators count=%d', Array.isArray(indicators) ? indicators.length : 0);
+                    set({
+                        complianceIndicators: Array.isArray(indicators) ? indicators : []
+                    });
+                },
+                onScoring: (scores)=>{
+                    set((state)=>{
+                        var _this;
+                        return {
+                            riskScores: scores,
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                risk_scores: scores,
+                                overall_risk_level: (_this = scores) === null || _this === void 0 ? void 0 : _this.level
+                            })
+                        };
+                    });
+                },
+                onGovernance: (plan)=>{
+                    set((state)=>({
+                            governancePlan: plan,
+                            riskReport: mergeRiskReport(state.riskReport, {
+                                governance_plan: plan
+                            })
+                        }));
+                },
+                onAgentTrace: (trace)=>{
+                    set((state)=>({
+                            agentTraces: [
+                                ...state.agentTraces,
+                                trace
+                            ]
+                        }));
+                    console.groupCollapsed(`%c[AgentTrace] ${trace.agent} / ${trace.step}`, 'color:#fa8c16;font-weight:bold');
+                    console.log(trace.summary, trace.metrics);
+                    console.groupEnd();
                 },
                 onReport: (report)=>{
                     set((state)=>({
-                            riskReport: report,
-                            messages: state.messages.map((m)=>{
-                                var _report_markdown_report;
-                                return m.id === tempId ? {
+                            riskReport: mergeRiskReport(state.riskReport, report),
+                            messages: state.messages.map((m)=>m.id === tempId ? {
                                     ...m,
-                                    content: report.executive_summary || ((_report_markdown_report = report.markdown_report) === null || _report_markdown_report === void 0 ? void 0 : _report_markdown_report.slice(0, 300)) || '',
+                                    content: buildReportAnswer(report),
                                     isLoading: false,
                                     thinkingStatus: undefined,
                                     data: {
                                         echartsConfig: report.echarts_config
                                     }
-                                } : m;
-                            }),
+                                } : m),
                             isLoading: false,
                             currentRoute: 'risk',
                             activeRightPanel: 'risk'
                         }));
                 },
-                onDone: ()=>{
+                onDone: (data)=>{
+                    const finalIntent = (data === null || data === void 0 ? void 0 : data.intent_type) || expectedIntent;
+                    const isRisk = finalIntent === 'risk_analysis';
                     set((state)=>({
                             isLoading: false,
-                            currentRoute: 'risk',
+                            currentRoute: isRisk ? 'risk' : 'graph',
+                            activeRightPanel: isRisk ? 'risk' : 'graph',
                             messages: state.messages.map((m)=>m.id === tempId ? {
                                     ...m,
+                                    content: m.content || (isRisk ? buildPartialRiskAnswer(query, state.riskReport, state.currentSubgraph) : buildGraphQaAnswer(query, state.currentSubgraph)),
                                     isLoading: false,
                                     thinkingStatus: undefined
                                 } : m)
@@ -8990,10 +13789,9 @@ const useAgentStore = (0, _zustand.create)((set, get)=>({
                     set((state)=>({
                             isLoading: false,
                             error: msg,
-                            currentRoute: 'risk',
                             messages: state.messages.map((m)=>m.id === tempId ? {
                                     ...m,
-                                    content: `Risk analysis failed: ${msg}`
+                                    content: `Error: ${msg}`
                                 } : m)
                         }));
                 }
@@ -9018,9 +13816,17 @@ const useAgentStore = (0, _zustand.create)((set, get)=>({
                 riskReport: null,
                 riskStages: [],
                 riskCommunity: null,
+                riskEntityCommunityMap: null,
+                complianceScores: null,
+                complianceIndicators: null,
                 activeRightPanel: 'graph',
+                resolvedEntities: [],
+                evidenceChains: null,
+                riskScores: null,
+                governancePlan: null,
                 uploadedFile: null,
                 fileUploading: false,
+                agentTraces: [],
                 lastRiskQuery: ''
             });
         },

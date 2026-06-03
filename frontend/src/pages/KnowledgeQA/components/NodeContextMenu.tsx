@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import {
   EyeOutlined,
-  PlusOutlined,
   ApartmentOutlined,
   FileTextOutlined,
   CopyOutlined,
@@ -16,7 +15,6 @@ export interface NodeContextMenuProps {
   nodeType: string
   onClose: () => void
   onViewDetail: () => void
-  onAddMonitor: () => void
   onExpand: () => void
   onGenerateReport: () => void
 }
@@ -24,7 +22,6 @@ export interface NodeContextMenuProps {
 const menuItems = [
   { key: 'detail', icon: <EyeOutlined />, label: 'View Detail' },
   { key: 'expand', icon: <ApartmentOutlined />, label: 'Expand Connections' },
-  { key: 'monitor', icon: <PlusOutlined />, label: 'Add to Watchlist' },
   { key: 'report', icon: <FileTextOutlined />, label: 'Generate Risk Report' },
   { key: 'copy', icon: <CopyOutlined />, label: 'Copy Node Name' },
 ]
@@ -38,7 +35,6 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
   nodeType,
   onClose,
   onViewDetail,
-  onAddMonitor,
   onExpand,
   onGenerateReport,
 }) => {
@@ -70,7 +66,6 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
     switch (key) {
       case 'detail': onViewDetail(); break
       case 'expand': onExpand(); break
-      case 'monitor': onAddMonitor(); break
       case 'report': onGenerateReport(); break
       case 'copy':
         navigator.clipboard.writeText(nodeName).catch(() => {

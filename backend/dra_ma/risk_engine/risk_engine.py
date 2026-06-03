@@ -16,6 +16,7 @@ from dra_ma.skills.base import SkillContext, SkillHook
 from dra_ma.skills.registry import SkillManager
 from dra_ma.skills.consensus.persona_selector import PersonaSelector
 from dra_ma.skills.consensus.entity_cleaner import EntityCleaner
+from dra_ma.tools.community_discovery_tools import CommunityDiscoveryTool
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,12 @@ class RiskAnalysisEngine:
         yield {"stage": "community", "content": f"群体发现: {community_count} 个群体"}
         yield {"community": community_info}
 
+        # ── Entity→Community mapping ─────────────────────────────
+        entity_community_map = self._compute_entity_community_map(
+            entity_stats, community_info, node_list, edge_list,
+        )
+        yield {"entity_community_map": entity_community_map}
+
         # ── Skill: RISK_ANALYZING (PersonaSelector for risk analysis) ──
         ctx = await self.skills.execute_hook(SkillHook.RISK_ANALYZING, ctx)
 
@@ -148,6 +155,7 @@ class RiskAnalysisEngine:
                 "executive_summary": report.get("executive_summary", ""),
                 "entity_stats": entity_stats,
                 "community_info": community_info,
+                "entity_community_map": entity_community_map,
                 "risk_paths": risk_paths,
                 "anomaly_findings": anomalies,
                 "compliance_matches": compliance_matches,
@@ -204,6 +212,12 @@ class RiskAnalysisEngine:
         yield {"stage": "community", "content": f"群体发现完成: {len(community_info['communities'])} 个群体"}
         yield {"community": community_info}
 
+        # Entity→Community mapping
+        entity_community_map = self._compute_entity_community_map(
+            entity_stats, community_info, nodes, edges,
+        )
+        yield {"entity_community_map": entity_community_map}
+
         # Stage 5: Analyze risk patterns from graph structure
         await asyncio.sleep(0.5)
         risk_paths, anomalies = await self._demo_analyze(nodes, edges)
@@ -225,6 +239,7 @@ class RiskAnalysisEngine:
                 "executive_summary": report["executive_summary"],
                 "entity_stats": entity_stats,
                 "community_info": community_info,
+                "entity_community_map": entity_community_map,
                 "risk_paths": risk_paths,
                 "anomaly_findings": anomalies,
                 "compliance_matches": compliance_matches,
@@ -241,19 +256,106 @@ class RiskAnalysisEngine:
             }
         }
 
+    # ── LLM-based entity extraction (follows IntentAgent multi-agent pattern) ──
+
+    _ENTITY_EXTRACTION_PROMPT = """你是一个金融风控知识图谱的实体提取专家（Entity Extraction Agent）。
+
+你的任务是从用户的自然语言查询中，提取出所有涉及的**实体名称**（如公司名、人名、事件名、法规名等）。
+
+【图谱领域】
+- 数据集: FinancialRegulatoryKG（金融监管知识图谱）
+- 实体类型: 公司/企业（COMPANY）、个人/人物（PERSON）、事件（EVENT）、风险特征（RiskFeature）、法规（Regulation/Law）、监管行动（Action）
+
+【提取规则】
+1. 人名：中文姓名（2-4个字），如"张明远"、"李四"
+2. 公司名：包含"公司"、"集团"、"有限"、"股份"、"企业"等后缀的实体名，如"鑫达投资管理有限公司"
+3. 事件/法规名：查询中明确提到的具体事件或法规名称
+4. 只提取查询中明确出现的实体名，不要凭空编造
+5. 如果查询中没有明确实体，返回空列表
+
+【输出格式】
+{{
+  "reasoning": "简要分析查询中提到的实体",
+  "entities": ["实体名1", "实体名2"]
+}}
+
+❌ 绝对禁止输出任何多余的解释文字，最终必须是合法的 JSON 字符串。"""
+
+    @classmethod
+    async def _extract_entities_llm(cls, query: str) -> list[str]:
+        """Extract entity names from query using LLM, following the IntentAgent pattern."""
+        try:
+            raw = await call_llm(
+                system=cls._ENTITY_EXTRACTION_PROMPT,
+                user=f"用户查询: {query}",
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(raw)
+            entities = data.get("entities", [])
+            reasoning = data.get("reasoning", "")
+            if reasoning:
+                logger.info(f"[EntityExtraction] Reasoning: {reasoning[:200]}")
+            logger.info(f"[EntityExtraction] Extracted entities: {entities}")
+            return entities if isinstance(entities, list) else []
+        except Exception as exc:
+            logger.warning(f"[EntityExtraction] LLM extraction failed: {exc}, falling back to full query")
+            return [query.strip()]
+
+    # ── File content entity extraction ──
+
+    _FILE_ENTITY_EXTRACTION_PROMPT = """你是一个金融风控知识图谱的文档分析专家。
+
+你的任务是从上传的金融文档/新闻/报告中提取:
+1. 核心实体（公司名、人名、事件名、法规名）
+2. 风险信号（违规行为、处罚、异常交易、诉讼等）
+3. 文档摘要（100字以内）
+
+【提取规则】
+1. 只提取文档中明确出现的实体名，不要编造
+2. 风险信号应为具体可查证的事项
+3. 最多提取10个最关键实体
+4. 如果文档不包含金融风控相关内容，返回空列表
+
+【输出格式】
+{{
+  "summary": "文档摘要(100字以内)",
+  "entities": ["实体名1", "实体名2"],
+  "risk_signals": ["风险信号1", "风险信号2"],
+  "is_financial_risk_relevant": true/false
+}}
+
+禁止输出任何多余的解释文字，最终必须是合法的 JSON 字符串。"""
+
+    @classmethod
+    async def _extract_from_file_content_llm(cls, file_text: str) -> dict:
+        """Extract entities, risk signals, and summary from uploaded file content."""
+        truncated = file_text[:15000]
+        try:
+            raw = await call_llm(
+                system=cls._FILE_ENTITY_EXTRACTION_PROMPT,
+                user=f"文档内容:\n{truncated}",
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(raw)
+            logger.info(
+                "[FileExtraction] Found %d entities, %d risk signals",
+                len(data.get("entities", [])), len(data.get("risk_signals", [])),
+            )
+            return data
+        except Exception as exc:
+            logger.warning(f"[FileExtraction] LLM extraction failed: {exc}")
+            return {"summary": "", "entities": [], "risk_signals": [], "is_financial_risk_relevant": False}
+
     async def _demo_retrieve(
         self, query: str, focus_entities: list[str], max_hop: int,
     ) -> tuple[list[dict], list[dict]]:
         """Search for entities by keyword, then expand to get connected subgraph."""
-        # Extract token from query (use the whole query as keyword)
+        # Extract entity keywords via LLM (follows IntentAgent multi-agent pattern)
         keywords = focus_entities[:]
         if not keywords:
-            for token in query.replace("，", ",").replace("、", ",").split(","):
-                token = token.strip().strip("。").strip()
-                if len(token) >= 2:
-                    keywords.append(token)
-            if not keywords:
-                keywords = [query.strip()]
+            keywords = await self._extract_entities_llm(query)
 
         all_nodes: dict[str, dict] = {}
         all_edges: dict[str, dict] = {}
@@ -262,8 +364,9 @@ class RiskAnalysisEngine:
             search_cypher = """
             MATCH (n)
             WHERE (n.name CONTAINS $kw OR n.COMPANY_NM CONTAINS $kw
-               OR n.title CONTAINS $kw OR n.factor_nm CONTAINS $kw
-               OR n.feature_nm CONTAINS $kw OR n.regulation_title CONTAINS $kw)
+               OR n.PERSON_NM CONTAINS $kw OR n.title CONTAINS $kw
+               OR n.factor_nm CONTAINS $kw OR n.feature_nm CONTAINS $kw
+               OR n.regulation_title CONTAINS $kw)
             WITH n LIMIT 5
             MATCH (n)-[r*1..%d]-(m)
             RETURN n, r, m LIMIT 200
@@ -750,68 +853,24 @@ class RiskAnalysisEngine:
     def _compute_community_discovery(
         nodes: list[dict], edges: list[dict],
     ) -> dict[str, Any]:
-        """Run community detection on the retrieved subgraph using WCC."""
-        communities: list[dict] = []
+        """Run community detection via CommunityDiscoveryTool (WCC/Louvain)."""
+        result = CommunityDiscoveryTool.detect_communities(nodes, edges, method="auto")
+        return {
+            "communities": result.get("communities", []),
+            "algorithm": result.get("algorithm", "wcc"),
+        }
 
-        if not nodes or len(nodes) < 2:
-            return {"communities": communities, "algorithm": "wcc"}
-
-        try:
-            # Build adjacency for Weakly Connected Components
-            node_ids: list[str] = []
-            node_map: dict[str, dict] = {}
-            for n in nodes:
-                props = n.get("properties", {}) if isinstance(n.get("properties"), dict) else {}
-                nid = str(props.get("id") or props.get("name") or props.get("COMPANY_NM") or props.get("zh_name") or id(n))
-                node_ids.append(nid)
-                labels = n.get("labels", [])
-                node_name = props.get("name") or props.get("COMPANY_NM") or props.get("zh_name") or props.get("title") or nid
-                node_map[nid] = {"id": nid, "name": str(node_name)[:50], "type": labels[0] if labels else "Unknown"}
-
-            # Union-Find for connected components
-            parent: dict[str, str] = {nid: nid for nid in node_ids}
-
-            def find(x: str) -> str:
-                while parent[x] != x:
-                    parent[x] = parent[parent[x]]
-                    x = parent[x]
-                return x
-
-            def union(a: str, b: str) -> None:
-                ra, rb = find(a), find(b)
-                if ra != rb:
-                    parent[ra] = rb
-
-            for e in edges:
-                src = str(e.get("source", ""))
-                tgt = str(e.get("target", ""))
-                if src in parent and tgt in parent:
-                    union(src, tgt)
-
-            # Group by component
-            groups: dict[str, list[str]] = {}
-            for nid in node_ids:
-                root = find(nid)
-                groups.setdefault(root, []).append(nid)
-
-            # Build community list (only groups with >= 2 members)
-            comm_id = 0
-            for members in groups.values():
-                if len(members) < 2:
-                    continue
-                member_details = [node_map[m] for m in members if m in node_map]
-                communities.append({
-                    "community_id": comm_id,
-                    "size": len(members),
-                    "members": member_details,
-                    "modularity": None,
-                })
-                comm_id += 1
-
-        except Exception as exc:
-            logger.exception("[community] Discovery failed: %s", exc)
-
-        return {"communities": communities, "algorithm": "wcc"}
+    @staticmethod
+    def _compute_entity_community_map(
+        entity_stats: dict[str, Any],
+        community_info: dict[str, Any],
+        nodes: list[dict],
+        edges: list[dict],
+    ) -> dict[str, Any]:
+        """Map entities to communities via CommunityDiscoveryTool."""
+        return CommunityDiscoveryTool.map_entities_to_communities(
+            entity_stats, community_info, nodes, edges,
+        )
 
     # ── Stage implementations ───────────────────────────────────────
 

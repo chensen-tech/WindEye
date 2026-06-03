@@ -48,7 +48,14 @@ export interface QueryRewriteResult {
 export interface SubgraphNode {
   id: string
   type: string
+  entityType?: string
+  entity_type?: string
+  label?: string
   score: number
+  properties?: Record<string, unknown>
+  raw?: Record<string, unknown>
+  risk_level?: 'high' | 'medium' | 'low'
+  compliance_score?: number
   title?: string
   name?: string
   zh_name?: string
@@ -66,14 +73,17 @@ export interface SubgraphNode {
 }
 
 export interface SubgraphEdge {
+  id?: string
   source: string
   target: string
   relation: string
+  confidence?: number
 }
 
 export interface SubgraphPath {
   pathId: string
   nodeIds: string[]
+  edgeIds: string[]
   score: number
 }
 
@@ -147,6 +157,10 @@ export interface ApiResponse {
   }
 }
 
+export interface StreamReasoningEvent {
+  reasoning_log: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -156,6 +170,7 @@ export interface ChatMessage {
   thinkingProcess?: string[]
   isLoading?: boolean
   pipelineStages?: PipelineStage[]
+  reasoningLog?: string
   data?: {
     rewriteResult?: QueryRewriteResult
     subgraph?: Subgraph
@@ -207,7 +222,10 @@ export interface RiskPath {
   path_id: string
   risk_level: 'high' | 'medium' | 'low'
   affected_entities: string[]
+  node_ids?: string[]
+  edge_ids?: string[]
   path_description: string
+  path_text?: string
   confidence?: number
 }
 
@@ -257,6 +275,22 @@ export interface CommunityResult {
   algorithm: string
 }
 
+export interface EntityCommunityEntry {
+  name: string
+  type: string
+  id: string
+  communities: Array<{
+    community_id: number
+    size: number
+    role: 'core' | 'bridge' | 'member'
+  }>
+}
+
+export interface EntityCommunityMap {
+  entities: EntityCommunityEntry[]
+  unmapped_count: number
+}
+
 export interface RiskReport {
   report_id?: string
   generated_at?: string
@@ -264,6 +298,7 @@ export interface RiskReport {
   executive_summary: string
   entity_stats?: EntityStats
   community_info?: CommunityResult
+  entity_community_map?: EntityCommunityMap
   risk_paths: RiskPath[]
   anomaly_findings: AnomalyFinding[]
   compliance_matches: ComplianceMatch[]
@@ -280,6 +315,10 @@ export interface RiskReport {
   raw_data?: any[]
   legal_basis?: string[]
   penalty_cases?: PenaltyCase[]
+  resolved_entities?: ResolvedEntity[]
+  evidence_chains?: EvidenceChains
+  risk_scores?: RiskScores
+  governance_plan?: GovernancePlan
 }
 
 export interface PenaltyCase {
@@ -290,6 +329,85 @@ export interface PenaltyCase {
   penalty_type: string
   summary: string
   source_url?: string
+}
+
+// ── Unified Engine types ──
+
+export interface ResolvedEntity {
+  raw: string
+  canonical_name: string | null
+  kg_node_id: string | null
+  match_type: 'exact' | 'alias' | 'contains' | 'fuzzy' | 'llm_fallback' | 'unresolved'
+  match_score: number
+  confidence: number
+}
+
+export interface EvidenceChain {
+  claim_id: string
+  claim: string
+  supporting_nodes: string[]
+  supporting_edges: string[]
+  cypher_source: string
+  verifier_score: number
+  document_snippets: string[]
+  confidence: number
+}
+
+export interface EvidenceChains {
+  chains: EvidenceChain[]
+  overall_confidence: number
+  total_claims: number
+  verified_claims: number
+}
+
+export interface RiskScoreDetail {
+  dimension: string
+  score: number
+  weight: number
+  explanation?: string
+}
+
+export interface RiskScores {
+  scores: RiskScoreDetail[]
+  base_overall: number | null
+  final_overall: number | null
+  level: 'high' | 'medium' | 'low' | 'insufficient_evidence'
+  llm_adjustment: number
+  llm_adjustment_reason: string
+}
+
+export interface GovernanceAction {
+  target: string
+  risk_issue: string
+  measure: string
+  priority: 'urgent' | 'normal' | 'low'
+  department: string
+}
+
+export interface EscalationRule {
+  condition: string
+  action: string
+  timeline: string
+}
+
+export interface GovernancePlan {
+  actions: GovernanceAction[]
+  escalation_rules: EscalationRule[]
+  monitoring_checklist: string[]
+}
+
+// ── Unified SSE Envelope ──
+
+export interface UnifiedEnvelope {
+  event_id: string
+  session_id: string
+  round_id: number
+  stage: string
+  type: string
+  status: 'running' | 'success' | 'warning' | 'error'
+  data: any
+  error: string | null
+  timestamp: string
 }
 
 export interface ReportHistoryItem {
@@ -305,7 +423,33 @@ export interface RiskStage {
   content: string
 }
 
-export interface CommunityInfo extends CommunityResult {
+/**
+ * Community info received via SSE events. Handles both shapes:
+ * - Phase A (matched): { communities, algorithm, matched_community_id }
+ * - Phase B (detection): { communities, algorithm }
+ * - Legacy (explicit communityId): { community_id, size, top_entities }
+ */
+// ── Compliance Indicator types ──
+
+export interface ComplianceIndicator {
+  id: string
+  l1: string
+  l2: string
+  l3: string
+  objective: number
+  category: 'data_driven' | 'evidence_based' | 'policy_driven'
+  evidence: string
+}
+
+export interface ComplianceIndicatorScore extends ComplianceIndicator {
+  subjective: number
+  score: number
+}
+
+export interface CommunityInfo {
+  communities?: CommunityItem[]
+  algorithm?: string
+  matched_community_id?: number
   community_id?: number
   size?: number
   top_entities?: Array<{ id: string; name: string; label: string }>

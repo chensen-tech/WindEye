@@ -1,9 +1,9 @@
-"""Data Source Matching Agent — map structured requirements to scraper configs."""
+"""Data Source Matcher — map structured requirements to scraper configs."""
 
 from __future__ import annotations
 
 
-class SourceMatchingAgent:
+class SourceMatcher:
     """Match parsed requirements to available scraper configurations."""
 
     SOURCE_CAPABILITIES = {

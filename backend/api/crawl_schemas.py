@@ -1,4 +1,4 @@
-"""Pydantic schemas for multi-agent crawl task requests and responses."""
+"""Pydantic schemas for crawl task requests and responses."""
 
 from __future__ import annotations
 

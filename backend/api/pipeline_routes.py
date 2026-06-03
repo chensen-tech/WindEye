@@ -6,7 +6,7 @@ Endpoints:
     GET  /api/v1/pipeline/runs            — history of pipeline runs
     GET  /api/v1/pipeline/sources         — list available data sources
     GET  /api/v1/pipeline/crawl/templates — list crawl templates
-    POST /api/v1/pipeline/crawl/run       — trigger multi-agent crawl (SSE)
+    POST /api/v1/pipeline/crawl/run       — trigger crawl (SSE)
     POST /api/v1/pipeline/crawl/parse-nl  — parse NL query for crawl
     GET  /api/v1/pipeline/crawl/sources   — list crawl source capabilities
     GET  /api/v1/pipeline/crawl/tasks     — crawl task history
@@ -255,7 +255,7 @@ async def trigger_pipeline_run(
     }
 
 
-# ── Multi-Agent Crawl Endpoints ──────────────────────────────────────────
+# ── Crawl Endpoints ─────────────────────────────────────────────────────
 
 
 @router.get("/crawl/templates")
@@ -272,7 +272,7 @@ async def list_crawl_templates():
 
 @router.post("/crawl/run")
 async def trigger_crawl(payload: CrawlTaskRequest, request: Request):
-    """Trigger a multi-agent crawl task with SSE streaming progress.
+    """Trigger a crawl task with SSE streaming progress.
 
     Request body: CrawlTaskRequest JSON
     Response: SSE stream with events: start, stage, source_result, complete, error
@@ -373,12 +373,12 @@ async def parse_natural_language(query: str = Query(..., description="Natural la
     Returns structured params for user confirmation.
     """
     try:
-        from data_collection.agents.requirement_agent import RequirementParsingAgent
+        from data_collection.agents.requirement_agent import RequirementParser
     except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"Agent module not available: {e}")
+        raise HTTPException(status_code=500, detail=f"Requirement parser not available: {e}")
 
-    agent = RequirementParsingAgent()
-    parsed = agent.parse_complex_mode(query)
+    parser = RequirementParser()
+    parsed = parser.parse_complex_mode(query)
     return {"success": True, "data": parsed}
 
 
@@ -386,12 +386,12 @@ async def parse_natural_language(query: str = Query(..., description="Natural la
 async def list_crawl_sources():
     """List available scraper sources with their capabilities (keywords, date_range, max_pages)."""
     try:
-        from data_collection.agents.source_matching_agent import SourceMatchingAgent
+        from data_collection.agents.source_matching_agent import SourceMatcher
     except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"Agent module not available: {e}")
+        raise HTTPException(status_code=500, detail=f"Source matcher not available: {e}")
 
-    agent = SourceMatchingAgent()
-    return {"sources": agent.SOURCE_CAPABILITIES}
+    matcher = SourceMatcher()
+    return {"sources": matcher.SOURCE_CAPABILITIES}
 
 
 @router.get("/crawl/tasks")

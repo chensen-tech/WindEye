@@ -764,7 +764,7 @@ const mapReportToActivity = (r)=>{
         level,
         timestamp: r.created_at || '',
         relativeTime,
-        title: ((_r_query = r.query) === null || _r_query === void 0 ? void 0 : _r_query.length) > 40 ? r.query.slice(0, 40) + '...' : r.query || '风险分析报告',
+        title: ((_r_query = r.query) === null || _r_query === void 0 ? void 0 : _r_query.length) > 40 ? r.query.slice(0, 40) + '...' : r.query || '协同治理报告',
         description: r.executive_summary ? r.executive_summary.length > 80 ? r.executive_summary.slice(0, 80) + '...' : r.executive_summary : `${r.risk_path_count || 0} 条风险路径, ${r.anomaly_count || 0} 个异常, ${r.compliance_count || 0} 条合规匹配`,
         layerTags: [
             ...new Set(tags)
@@ -1560,7 +1560,7 @@ const Welcome = ()=>{
                         sm: 12,
                         lg: 4,
                         children: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(KPICard, {
-                            title: "风险报告",
+                            title: "治理报告",
                             value: recentReports.length > 0 ? `${recentReports.length}` : '0',
                             icon: /*#__PURE__*/ (0, _jsxdevruntime.jsxDEV)(_icons.FileTextOutlined, {}, void 0, false, {
                                 fileName: "src/pages/Welcome.tsx",
@@ -1947,7 +1947,7 @@ const Welcome = ()=>{
                                             lineNumber: 827,
                                             columnNumber: 36
                                         }, void 0),
-                                        title: "风险问答",
+                                        title: "协同治理",
                                         desc: "自然语言查询风险传导路径",
                                         color: "#2563EB",
                                         path: "/knowledge-qa"
@@ -1995,7 +1995,7 @@ const Welcome = ()=>{
                                             lineNumber: 833,
                                             columnNumber: 36
                                         }, void 0),
-                                        title: "风险报告",
+                                        title: "治理报告",
                                         desc: "结构化风险分析与合规研判",
                                         color: "#7C3AED",
                                         path: "/knowledge-qa"
@@ -2156,13 +2156,10 @@ __mako_require__.e(exports, {
     },
     fetchSummaryStats: function() {
         return fetchSummaryStats;
-    },
-    fetchTickets: function() {
-        return fetchTickets;
     }
 });
 var _interop_require_wildcard = __mako_require__("@swc/helpers/_/_interop_require_wildcard");
-var _reactrefresh = /*#__PURE__*/ _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
+var _reactrefresh = _interop_require_wildcard._(__mako_require__("node_modules/react-refresh/runtime.js"));
 var prevRefreshReg;
 var prevRefreshSig;
 prevRefreshReg = self.$RefreshReg$;
@@ -2195,16 +2192,6 @@ async function fetchHighRiskEntities(limit = 10) {
 async function fetchRecentReports(page = 1, limit = 5) {
     const res = await fetch(`${BASE}/api/v1/risk/reports?page=${page}&limit=${limit}`);
     if (!res.ok) throw new Error(`reports: ${res.status}`);
-    return res.json();
-}
-async function fetchTickets(status, page = 1, limit = 20) {
-    const params = new URLSearchParams({
-        page: String(page),
-        limit: String(limit)
-    });
-    if (status) params.set('status', status);
-    const res = await fetch(`${BASE}/api/v1/risk/tickets?${params.toString()}`);
-    if (!res.ok) throw new Error(`tickets: ${res.status}`);
     return res.json();
 }
 async function fetchPipelineStatus() {

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { Input, Spin, Empty, Tag, Typography, Upload, Button } from 'antd'
-import { SendOutlined, ClearOutlined, UploadOutlined, FileTextOutlined, CloseOutlined, LoadingOutlined } from '@ant-design/icons'
+import { SendOutlined, ClearOutlined, UploadOutlined, FileTextOutlined, CloseOutlined, LoadingOutlined, SearchOutlined } from '@ant-design/icons'
 import { EntityMessageBubble } from './EntityMessageBubble'
 import { RiskEntityCard } from './RiskEntityCard'
 import { ContextTagBar, ContextEntity } from './ContextTagBar'
@@ -38,6 +38,7 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
 }) => {
   const [input, setInput] = useState('')
   const [contextTags, setContextTags] = useState<ContextEntity[]>([])
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<any>(null)
 
@@ -48,7 +49,12 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
   const storeError = useAgentStore((s) => s.error)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesContainerRef.current
+    if (!container) return
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distanceToBottom < 96) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
   }, [messages, isLoading])
 
   const handleSend = useCallback(async () => {
@@ -144,7 +150,7 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+      <div ref={messagesContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         {messages.length === 0 ? (
           <div
             style={{
@@ -328,6 +334,18 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
               {uploadedFile.truncated && (
                 <span style={{ fontSize: 11, color: '#fa8c16' }}>内容过长，已自动截取前 50,000 字符</span>
               )}
+              <Button
+                type="primary"
+                size="small"
+                icon={<SearchOutlined />}
+                onClick={() => {
+                  onSendMessage('请分析该文件中的风险信息')
+                }}
+                disabled={isLoading}
+                style={{ fontSize: 12 }}
+              >
+                协同治理
+              </Button>
               <Button
                 type="text"
                 size="small"

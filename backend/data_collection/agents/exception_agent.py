@@ -1,4 +1,4 @@
-"""Exception Handling Agent — retry logic and fallback strategies."""
+"""Retry Handler — retry logic and fallback strategies."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PER_SOURCE_TIMEOUT = 900  # 15 min per source
 
 
-class ExceptionHandlingAgent:
+class RetryHandler:
     """Handle crawl failures with retry and fallback.
 
     Wraps scraper execution with:

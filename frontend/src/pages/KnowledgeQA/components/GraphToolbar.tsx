@@ -14,7 +14,7 @@ import {
   FilterOutlined,
 } from '@ant-design/icons'
 
-export type LayoutMode = 'force' | 'dagre' | 'circular'
+export type LayoutMode = 'force' | 'dagre' | 'circular' | 'concentric'
 
 export interface GraphToolbarProps {
   onZoomIn: () => void
@@ -119,6 +119,15 @@ const GraphToolbar: React.FC<GraphToolbarProps> = ({
             size="small"
             icon={<RadiusSettingOutlined />}
             onClick={() => onChangeLayout('circular')}
+            style={{ border: 'none', boxShadow: 'none' }}
+          />
+        </Tooltip>
+        <Tooltip title={`Concentric Layout${layoutMode === 'concentric' ? ' (active)' : ''}`} placement="left">
+          <Button
+            type={layoutMode === 'concentric' ? 'primary' : 'text'}
+            size="small"
+            icon={<FilterOutlined />}
+            onClick={() => onChangeLayout('concentric')}
             style={{ border: 'none', boxShadow: 'none' }}
           />
         </Tooltip>
