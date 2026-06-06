@@ -2,12 +2,13 @@
 
 import json as _json
 import logging
+from dataclasses import asdict
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, File, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Any, Literal
 
 from core.exceptions import BiDAError
 from core.models import ApiSuccessResponse, TraceContext
@@ -62,6 +63,139 @@ class ReportDocxExportRequest(BaseModel):
     query_text: str = Field(default="", alias="queryText")
 
 
+class RiskPathsRequest(BaseModel):
+    query: str = Field(default="", description="User question or risk-path analysis prompt.")
+    focus_entities: list[str] = Field(default_factory=list, alias="focusEntities")
+    source_entity: str | None = Field(default=None, alias="sourceEntity")
+    target_entities: list[str] = Field(default_factory=list, alias="targetEntities")
+    max_hop: int = Field(default=3, ge=1, le=5, alias="maxHop")
+    mode: Literal["node", "community", "both"] = "both"
+    relation_types: list[str] = Field(default_factory=list, alias="relationTypes")
+    subgraph: dict[str, Any] | None = None
+    communities: dict[str, Any] | None = None
+    entity_community_map: dict[str, Any] | None = Field(default=None, alias="entityCommunityMap")
+    file_content: str | None = Field(default=None, alias="fileContent")
+    session_id: str = Field(default="", alias="sessionId")
+    round_id: int = Field(default=1, alias="roundId")
+
+
+class GovernanceReportRequest(BaseModel):
+    query: str = Field(..., description="User question for collaborative governance report.")
+    focus_entities: list[str] = Field(default_factory=list, alias="focusEntities")
+    max_hop: int = Field(default=3, ge=1, le=5, alias="maxHop")
+    file_content: str | None = Field(default=None, alias="fileContent")
+    community_result: dict[str, Any] | None = Field(default=None, alias="communityResult")
+    risk_paths: dict[str, Any] | list[dict[str, Any]] | None = Field(default=None, alias="riskPaths")
+    compliance_context: dict[str, Any] | None = Field(default=None, alias="complianceContext")
+    export_formats: list[Literal["markdown", "docx", "pdf"]] = Field(default_factory=list, alias="exportFormats")
+    session_id: str = Field(default="", alias="sessionId")
+    round_id: int = Field(default=1, alias="roundId")
+
+
+class EntityAliasRequest(BaseModel):
+    alias: str = Field(..., description="User-entered short name or alias.")
+    canonical_name: str = Field(..., alias="canonicalName", description="Confirmed canonical KG entity name.")
+    kg_node_id: str = Field(default="", alias="kgNodeId")
+    entity_type: str = Field(default="", alias="entityType")
+    source: str = Field(default="user_confirmed")
+
+
+def _api_ok(data: Any, msg: str = "success") -> dict[str, Any]:
+    return {"code": 0, "msg": msg, "data": data}
+
+
+def _api_error(code: int, msg: str, data: Any = None) -> dict[str, Any]:
+    return {"code": code, "msg": msg, "data": data}
+
+
+def _build_risk_path_query(payload: RiskPathsRequest) -> str:
+    if payload.query.strip():
+        return payload.query.strip()
+    entities = payload.focus_entities[:]
+    if payload.source_entity:
+        entities.insert(0, payload.source_entity)
+    if payload.target_entities:
+        entities.extend(payload.target_entities)
+    unique_entities = []
+    for entity in entities:
+        if entity and entity not in unique_entities:
+            unique_entities.append(entity)
+    entity_text = "、".join(unique_entities) if unique_entities else "风险主体"
+    mode_text = {
+        "node": "具体节点路径",
+        "community": "群体之间传导路径",
+        "both": "群体之间传导路径和具体节点路径",
+    }.get(payload.mode, "风险传导路径")
+    return f"分析{entity_text}的风险传导过程，输出{mode_text}"
+
+
+async def _collect_unified_analysis(
+    kg_system: Any,
+    *,
+    query: str,
+    session_id: str,
+    round_id: int,
+    max_hop: int,
+    file_content: str | None = None,
+) -> dict[str, Any]:
+    from dra_ma.orchestrator.unified_engine import UnifiedEngine
+
+    unified = UnifiedEngine(dra_engine=kg_system, demo=False)
+    collected: dict[str, Any] = {
+        "events": [],
+        "subgraph": None,
+        "entity_stats": None,
+        "community": None,
+        "entity_community_map": None,
+        "candidate_risk_paths": [],
+        "risk_paths": None,
+        "anomaly_findings": [],
+        "compliance_matches": [],
+        "risk_scores": None,
+        "governance_plan": None,
+        "report": None,
+        "done": None,
+    }
+
+    async for line in unified.stream(
+        query=query,
+        session_id=session_id or f"sess-{uuid4().hex[:10]}",
+        round_id=round_id,
+        max_hop=max_hop,
+        intent_hint="risk_analysis",
+        file_content=file_content,
+    ):
+        event = _json.loads(line) if isinstance(line, str) else line
+        event_type = event.get("type", "")
+        data = event.get("data", event)
+        collected["events"].append({"type": event_type, "status": event.get("status"), "data": data})
+        if event_type == "subgraph":
+            collected["subgraph"] = data
+        elif event_type == "entity_stats":
+            collected["entity_stats"] = data
+        elif event_type == "community":
+            collected["community"] = data
+        elif event_type == "entity_community_map":
+            collected["entity_community_map"] = data
+        elif event_type == "candidate_risk_paths":
+            collected["candidate_risk_paths"] = data if isinstance(data, list) else []
+        elif event_type == "risk_paths":
+            collected["risk_paths"] = data
+        elif event_type == "anomaly_findings":
+            collected["anomaly_findings"] = data if isinstance(data, list) else []
+        elif event_type == "compliance":
+            collected["compliance_matches"] = data if isinstance(data, list) else []
+        elif event_type == "scoring":
+            collected["risk_scores"] = data
+        elif event_type == "governance":
+            collected["governance_plan"] = data
+        elif event_type == "report":
+            collected["report"] = data
+        elif event_type == "done":
+            collected["done"] = data
+    return collected
+
+
 def create_routes(app, kg_system, risk_engine=None):
     """Register all API routes on the FastAPI application."""
 
@@ -72,6 +206,10 @@ def create_routes(app, kg_system, risk_engine=None):
     # ── Pipeline management routes ──
     from api.pipeline_routes import router as pipeline_router
     app.include_router(pipeline_router)
+
+    # ── Governance routes (community discovery, risk paths) ──
+    from api.governance_routes import router as governance_router
+    app.include_router(governance_router)
 
     @app.get("/health")
     def health(request: Request) -> dict[str, str]:
@@ -115,6 +253,60 @@ def create_routes(app, kg_system, risk_engine=None):
     @app.post("/api/login/outLogin")
     async def out_login():
         return {"data": {}, "success": True}
+
+    @app.get("/api/v1/entities/search")
+    async def search_entities(q: str, type: str = "COMPANY", limit: int = 30):
+        """Search KG subject-layer candidates for abbreviation confirmation."""
+        try:
+            from dra_ma.tools.entity_resolver import EntityResolver
+
+            query = (q or "").strip()
+            if not query:
+                return _api_error(40001, "查询实体不能为空", None)
+            safe_limit = max(1, min(int(limit or 10), 30))
+            preferred_type = (type or "COMPANY").strip().upper() or None
+            resolver = EntityResolver()
+            candidates = await resolver.search_candidates(
+                query,
+                limit=safe_limit * 2,
+                preferred_type=preferred_type,
+            )
+            subject_candidates = [
+                item
+                for item in candidates
+                if "Subject" in item.labels
+                or item.entity_type.upper() in {"COMPANY", "PERSON"}
+            ][:safe_limit]
+            return _api_ok({
+                "query": query,
+                "type": preferred_type,
+                "count": len(subject_candidates),
+                "candidates": [asdict(item) for item in subject_candidates],
+            })
+        except Exception as exc:
+            _logger.exception("[EntitySearch] failed: %s", exc)
+            return _api_error(50003, f"主体候选检索失败: {exc}", None)
+
+    @app.post("/api/v1/entities/aliases")
+    async def create_entity_alias(req: EntityAliasRequest):
+        """Persist a user-confirmed alias for future entity resolution."""
+        try:
+            from dra_ma.tools.entity_resolver import EntityResolver
+
+            resolver = EntityResolver()
+            saved = await resolver.save_alias(
+                alias=req.alias,
+                canonical_name=req.canonical_name,
+                kg_node_id=req.kg_node_id,
+                entity_type=req.entity_type,
+                source=req.source or "user_confirmed",
+            )
+            return _api_ok(saved, "alias_saved")
+        except ValueError as exc:
+            return _api_error(40002, str(exc), None)
+        except Exception as exc:
+            _logger.exception("[EntityAlias] failed: %s", exc)
+            return _api_error(50004, f"实体别名保存失败: {exc}", None)
 
     # ── DRA-MA KG Q&A routes ──────────────────────────────────────
 
@@ -226,6 +418,124 @@ def create_routes(app, kg_system, risk_engine=None):
                 "Access-Control-Allow-Origin": "*",
             },
         )
+
+    @app.post("/api/v1/risk-paths")
+    async def create_risk_paths(req: RiskPathsRequest, request: Request):
+        """REST resource for risk transmission path analysis.
+
+        This endpoint is a non-streaming facade over the governance pipeline.
+        It returns candidate paths, interpreted paths, node paths, community
+        context, anomaly findings, and graph highlight IDs.
+        """
+        try:
+            query = _build_risk_path_query(req)
+            collected = await _collect_unified_analysis(
+                kg_system,
+                query=query,
+                session_id=req.session_id or getattr(request.state, "trace_id", ""),
+                round_id=req.round_id,
+                max_hop=req.max_hop,
+                file_content=req.file_content,
+            )
+            risk_paths_payload = collected.get("risk_paths") or {}
+            if isinstance(risk_paths_payload, list):
+                interpreted_paths = risk_paths_payload
+                candidate_paths = collected.get("candidate_risk_paths") or []
+                merged_paths = interpreted_paths
+            else:
+                candidate_paths = risk_paths_payload.get("candidate_paths") or collected.get("candidate_risk_paths") or []
+                interpreted_paths = risk_paths_payload.get("interpreted_paths") or []
+                merged_paths = risk_paths_payload.get("merged_paths") or interpreted_paths or candidate_paths
+
+            graph_highlight = {
+                "node_ids": sorted({
+                    str(node_id)
+                    for path in merged_paths
+                    for node_id in (path.get("node_ids") or path.get("nodeIds") or [])
+                }),
+                "edge_ids": sorted({
+                    str(edge_id)
+                    for path in merged_paths
+                    for edge_id in (path.get("edge_ids") or path.get("edgeIds") or [])
+                }),
+            }
+            return _api_ok({
+                "query": query,
+                "mode": req.mode,
+                "candidate_paths": candidate_paths,
+                "risk_paths": interpreted_paths,
+                "merged_paths": merged_paths,
+                "node_paths": merged_paths,
+                "community_paths": [],
+                "anomaly_findings": collected.get("anomaly_findings") or [],
+                "community_info": collected.get("community"),
+                "entity_community_map": collected.get("entity_community_map"),
+                "subgraph": collected.get("subgraph"),
+                "graph_highlight": graph_highlight,
+            })
+        except Exception as exc:
+            _logger.exception("[RiskPaths] failed: %s", exc)
+            return _api_error(50001, f"风险传导分析失败: {exc}", None)
+
+    @app.post("/api/v1/governance/reports")
+    async def create_governance_report(req: GovernanceReportRequest, request: Request):
+        """REST resource for collaborative governance community reports."""
+        try:
+            collected = await _collect_unified_analysis(
+                kg_system,
+                query=req.query,
+                session_id=req.session_id or getattr(request.state, "trace_id", ""),
+                round_id=req.round_id,
+                max_hop=req.max_hop,
+                file_content=req.file_content,
+            )
+            report = collected.get("report")
+            if not report:
+                report = {
+                    "report_id": f"WIND-RPT-{uuid4().hex[:8].upper()}",
+                    "query_summary": req.query,
+                    "executive_summary": "本轮分析未形成完整报告，已返回可确认的中间结果。",
+                    "community_info": collected.get("community"),
+                    "entity_community_map": collected.get("entity_community_map"),
+                    "risk_paths": (collected.get("risk_paths") or {}).get("interpreted_paths", [])
+                    if isinstance(collected.get("risk_paths"), dict) else [],
+                    "anomaly_findings": collected.get("anomaly_findings") or [],
+                    "compliance_matches": collected.get("compliance_matches") or [],
+                    "risk_scores": collected.get("risk_scores"),
+                    "governance_plan": collected.get("governance_plan"),
+                    "recommendations": [],
+                    "markdown_report": "",
+                    "subgraph_summary": {
+                        "node_count": len((collected.get("subgraph") or {}).get("nodes", [])),
+                        "edge_count": len((collected.get("subgraph") or {}).get("edges", [])),
+                    },
+                }
+            if not report.get("report_id"):
+                report["report_id"] = f"WIND-RPT-{uuid4().hex[:8].upper()}"
+            if not report.get("query_summary"):
+                report["query_summary"] = req.query
+            export_files = {
+                fmt: None
+                for fmt in req.export_formats
+                if fmt in {"markdown", "docx", "pdf"}
+            }
+            if "markdown" in export_files:
+                export_files["markdown"] = {
+                    "filename": f"{report.get('report_id', 'governance-report')}.md",
+                    "content": report.get("markdown_report") or report.get("integrated_report") or "",
+                }
+            return _api_ok({
+                **report,
+                "export_files": export_files,
+                "source_events": {
+                    "has_community": collected.get("community") is not None,
+                    "has_risk_paths": collected.get("risk_paths") is not None,
+                    "has_governance": collected.get("governance_plan") is not None,
+                },
+            })
+        except Exception as exc:
+            _logger.exception("[GovernanceReports] failed: %s", exc)
+            return _api_error(50002, f"协同治理社区报告生成失败: {exc}", None)
 
     @app.post("/api/v1/chat/upload")
     async def upload_file(file: UploadFile = File(...)):

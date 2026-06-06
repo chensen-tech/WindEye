@@ -8,6 +8,7 @@ import type {
   EntityStats,
   CommunityResult,
   EntityCommunityMap,
+  EntityCandidate,
 } from '../types/api'
 
 const client = axios.create({
@@ -26,6 +27,30 @@ export interface ChatRequest {
 export const sendChat = async (req: ChatRequest): Promise<ApiResponse> => {
   const resp = await client.post<ApiResponse>('/chat/recommend', req)
   return resp.data
+}
+
+export const searchEntityCandidates = async (
+  query: string,
+  type = 'COMPANY',
+  limit = 10,
+): Promise<EntityCandidate[]> => {
+  const resp = await client.get('/entities/search', {
+    params: { q: query, type, limit },
+  })
+  return resp.data?.data?.candidates || []
+}
+
+export const saveEntityAlias = async (
+  alias: string,
+  candidate: EntityCandidate,
+): Promise<void> => {
+  await client.post('/entities/aliases', {
+    alias,
+    canonicalName: candidate.canonical_name,
+    kgNodeId: candidate.kg_node_id,
+    entityType: candidate.entity_type,
+    source: 'user_confirmed',
+  })
 }
 
 export const sendChatStream = (
@@ -454,6 +479,7 @@ export interface UnifiedStreamCallbacks {
   onComplianceIndicators?: (data: { indicators: import('../types/api').ComplianceIndicator[] }) => void
   onScoring?: (scores: any) => void
   onGovernance?: (plan: any) => void
+  onExpandedCommunity?: (result: import('../types/api').ExpandedCommunityResult) => void
   onReport?: (report: any) => void
   onDone?: (data: any) => void
   onError?: (msg: string) => void
@@ -567,6 +593,9 @@ export const sendUnifiedStream = (
                   break
                 case 'governance':
                   callbacks.onGovernance?.(data.data || data)
+                  break
+                case 'expanded_community':
+                  callbacks.onExpandedCommunity?.(data.data || data)
                   break
                 case 'agent_trace':
                   callbacks.onAgentTrace?.(data.data || data)

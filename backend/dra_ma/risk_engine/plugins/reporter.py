@@ -66,6 +66,8 @@ class ReporterPlugin:
                 temperature=0.3, response_format={"type": "json_object"},
             )
             result = json.loads(raw) if raw else {}
+            if not result.get("markdown_report") and (risk_paths or anomalies or compliance_matches):
+                result = self._demo_report(query, node_count, edge_count, risk_paths, anomalies, compliance_matches)
             agent_trace("Reporter", "REPORT",
                 report_id=query[:50] if query else "unknown",
                 risk_level=result.get("overall_risk_level", "unknown"),

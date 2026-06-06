@@ -97,9 +97,12 @@ class SeedCommunityRequest(BaseModel):
     seed_names: list[str] = Field(default_factory=list, alias="seedNames")
     seed_ids: list[str] = Field(default_factory=list, alias="seedIds")
     max_hop: int = Field(default=2, ge=1, le=3, alias="maxHop")
-    method: str = Field(default="louvain", description="louvain | greedy | wcc")
+    method: str = Field(default="auto", description="auto | wcc | louvain | leiden | hgt_gkmeans")
     min_community_size: int = Field(default=2, ge=1, le=100, alias="minCommunitySize")
     path_limit: int = Field(default=2000, ge=50, le=10000, alias="pathLimit")
+    max_nodes: int = Field(default=300, ge=10, le=5000, alias="maxNodes")
+    relation_whitelist: list[str] = Field(default_factory=list, alias="relationWhitelist")
+    community_mode: str = Field(default="expanded", alias="communityMode")
 
 
 # ====================================================
@@ -408,7 +411,9 @@ _ALL_LABELS = [
     "Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY",
     "Event", "EVENT", "TIME", "REGULATOR",
     "Feature", "RiskFeature", "RiskFactor",
-    "Regulation", "Law", "Action",
+    "Regulation", "Law", "Action", "Entity", "NODE", "Section",
+    "Responsibility", "PartyWithResponsibility", "Actor",
+    "RegulatoryAuthority",
 ]
 
 # Layer-specific label groups for cross-layer UNION queries
@@ -423,6 +428,18 @@ _LAYER_LABEL_MAP = {
     "Feature": _LAYER_FEATURE,
     "Regulation": _LAYER_REGULATION,
 }
+
+
+def _labels_for_layer(layer: str) -> list[str]:
+    """Return concrete Neo4j labels for a UI layer.
+
+    `layer=all` must use the real labels in the database, not only the
+    abstract four-layer labels. Otherwise entity names that resolve to COMPANY,
+    PERSON, SECURITY, etc. are filtered out before traversal starts.
+    """
+    if layer in _LAYER_LABEL_MAP:
+        return _LAYER_LABEL_MAP[layer]
+    return _ALL_LABELS
 
 
 def _labels_cypher(var: str, labels: list[str]) -> str:
@@ -511,13 +528,7 @@ def search_graph(
     rel_constraint = f":{relType}" if relType else ""
     node_label_constraint = f":{nodeType}" if nodeType else ""
 
-    layer_label_map = {
-        "Subject": ["COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY", "Subject"],
-        "Event": ["COMPANY", "PERSON", "TIME", "EVENT", "REGULATOR", "Event"],
-        "Feature": ["RiskFeature", "RiskFactor", "Feature"],
-        "Regulation": ["Regulation", "Law"],
-    }
-    layer_labels = layer_label_map.get(layer, ["Subject", "Event", "Feature", "Regulation"])
+    layer_labels = _labels_for_layer(layer)
     labels_cypher = ", ".join(f"'{l}'" for l in layer_labels)
 
     if not keyword and not nodeType and not relType:
@@ -561,7 +572,12 @@ def search_graph(
         else:
             query = f"""
             MATCH (n)
-            WHERE (n.PERSON_NM CONTAINS $keyword OR n.COMPANY_NM CONTAINS $keyword OR n.name CONTAINS $keyword)
+            WHERE (n.PERSON_NM CONTAINS $keyword
+               OR n.COMPANY_NM CONTAINS $keyword
+               OR n.name CONTAINS $keyword
+               OR n.title CONTAINS $keyword
+               OR n.zh_name CONTAINS $keyword
+               OR n.id CONTAINS $keyword)
               AND any(label IN labels(n) WHERE label IN [{labels_cypher}])
             WITH n
             MATCH path = (n)-[r{rel_constraint}*1..{layers}]-(m{node_label_constraint})
@@ -683,28 +699,13 @@ def get_subgraph(
     layer: str = Query("all", description="Layer filter"),
     limit: int = Query(50, ge=1, le=200),
 ):
-    layer_label_map = {
-        "Subject": ["COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY", "Subject"],
-        "Event": ["COMPANY", "PERSON", "TIME", "EVENT", "REGULATOR", "Event"],
-        "Feature": ["RiskFeature", "RiskFactor", "Feature"],
-        "Regulation": ["Regulation", "Law"],
-    }
-
-    if layer in layer_label_map:
-        labels_cypher = ", ".join(f"'{l}'" for l in layer_label_map[layer])
-        query = f"""
-        MATCH (n)-[r]-(m)
-        WHERE elementId(n) = $id
-          AND any(label IN labels(m) WHERE label IN [{labels_cypher}])
-        RETURN n, r, m LIMIT $limit
-        """
-    else:
-        query = """
-        MATCH (n)-[r]-(m)
-        WHERE elementId(n) = $id
-          AND any(label IN labels(m) WHERE label IN ['Subject','Event','Feature','Regulation'])
-        RETURN n, r, m LIMIT $limit
-        """
+    labels_cypher = ", ".join(f"'{l}'" for l in _labels_for_layer(layer))
+    query = f"""
+    MATCH (n)-[r]-(m)
+    WHERE elementId(n) = $id
+      AND any(label IN labels(m) WHERE label IN [{labels_cypher}])
+    RETURN n, r, m LIMIT $limit
+    """
 
     logger.info("Subgraph — id=%s layer=%s limit=%s", node_id, layer, limit)
     try:
@@ -806,7 +807,7 @@ def list_algorithms():
 @router.get("/communities")
 def detect_communities(
     layer: str = Query("all", description="Layer filter: all, Subject, Event, Feature, Regulation"),
-    method: str = Query("wcc", description="Algorithm: wcc, louvain, label_propagation, leiden, girvan_newman, spectral, infomap"),
+    method: str = Query("wcc", description="Algorithm: wcc, louvain, hgt_gkmeans, label_propagation, leiden, girvan_newman, spectral, infomap"),
     max_nodes: int = Query(5000, ge=1, le=20000, description="Max nodes to analyze"),
     min_community_size: int = Query(3, ge=1, le=100, description="Minimum community size"),
 ):
@@ -814,7 +815,8 @@ def detect_communities(
 
     Supports 7 algorithms:
     - wcc: Weakly Connected Components (fast, Cypher-based)
-    - louvain: Louvain-inspired modularity optimization (Python scipy)
+    - louvain: Louvain modularity optimization (NetworkX, fallback-aware)
+    - hgt_gkmeans: HGT embedding + Graph K-means (requires stored node embeddings)
     - label_propagation: Iterative label propagation (Python)
     - leiden: Leiden algorithm with refinement steps (python-igraph)
     - girvan_newman: Divisive edge-betweenness clustering (python-igraph)
@@ -876,14 +878,18 @@ def discover_seed_subgraph_communities(req: SeedCommunityRequest):
     from kg_query.analytics.graph_analytics import GraphAnalytics
 
     analytics = GraphAnalytics(db_client=_client())
-    return analytics.discover_seeded_communities(
+    result = analytics.discover_seeded_communities(
         seed_names=req.seed_names,
         seed_ids=req.seed_ids,
         max_hop=req.max_hop,
         method=req.method,
         min_community_size=req.min_community_size,
         path_limit=req.path_limit,
+        max_nodes=req.max_nodes,
+        relation_whitelist=req.relation_whitelist,
+        community_mode=req.community_mode,
     )
+    return {"code": 0, "msg": "success", "data": result}
 
 
 @router.get("/communities/{community_id}/quality")

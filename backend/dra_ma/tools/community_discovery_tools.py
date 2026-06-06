@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 class CommunityDiscoveryTool:
     """Detect communities from subgraph node/edge lists.
 
-    method="auto": WCC for small graphs (< 50 nodes), Louvain for larger ones.
+    method="auto": WCC for small graphs (< 30 nodes), HGT-GKMeans when
+    embeddings are available, Louvain for larger structure-only graphs.
     """
 
     @staticmethod
@@ -50,9 +51,11 @@ class CommunityDiscoveryTool:
                 "algorithm": "none",
             }
 
+        fallback_reason = None
+
         # Auto-select method
         if method == "auto":
-            method = "wcc" if n < 50 else "louvain"
+            method = "hgt_gkmeans" if CommunityDiscoveryTool._has_hgt_embeddings(nodes) and n >= 30 else ("wcc" if n < 30 else "louvain")
             agent_trace("CommunityDiscovery", "DECISION",
                 selected_method=method,
                 reason=f"Auto-selected {method}: n={n} nodes")
@@ -72,10 +75,22 @@ class CommunityDiscoveryTool:
 
         wcc_result = CommunityDiscoveryTool._compute_wcc(node_map, edges, min_community_size)
         louvain_result = CommunityDiscoveryTool._compute_louvain(node_map, edges, min_community_size)
+        hgt_result: list[dict] = []
+
+        if method == "hgt_gkmeans":
+            hgt_result, fallback_reason = CommunityDiscoveryTool._compute_hgt_gkmeans(nodes, edges, node_map, min_community_size)
+            if not hgt_result:
+                method = "wcc" if n < 30 else "louvain"
+                agent_trace("CommunityDiscovery", "FALLBACK",
+                    selected_method=method,
+                    fallback_reason=fallback_reason)
 
         if method == "wcc":
             communities = wcc_result
             reason = f"WCC: {n} nodes — checking connected risk network membership"
+        elif method == "hgt_gkmeans":
+            communities = hgt_result
+            reason = f"HGT-GKMeans: {n} nodes — clustering precomputed HGT embeddings"
         else:
             communities = louvain_result
             reason = f"Louvain: {n} nodes — partitioning large network into tight subgroups"
@@ -84,7 +99,9 @@ class CommunityDiscoveryTool:
             "communities": communities,
             "wcc_components": wcc_result,
             "louvain_communities": louvain_result,
+            "hgt_gkmeans_communities": hgt_result,
             "selected_method": method,
+            "fallback_reason": fallback_reason,
             "reason": reason,
             "algorithm": method,
         }
@@ -185,6 +202,48 @@ class CommunityDiscoveryTool:
                 exc, len(node_map),
             )
             return CommunityDiscoveryTool._compute_wcc(node_map, edges, min_size)
+
+    @staticmethod
+    def _compute_hgt_gkmeans(
+        nodes: list[dict],
+        edges: list[dict],
+        node_map: dict[str, dict],
+        min_size: int,
+    ) -> tuple[list[dict], str | None]:
+        try:
+            from kg_query.analytics.community.hgt_gkmeans import HGTGKMeansAlgorithm
+
+            groups, _modularity, meta = HGTGKMeansAlgorithm.cluster_subgraph(nodes, edges, min_size)
+            if not groups:
+                return [], str(meta.get("fallback_reason") or "hgt_gkmeans_failed")
+            communities: list[dict] = []
+            for comm_id, members in enumerate(groups):
+                member_list = [node_map[mid] for mid in members if mid in node_map]
+                if len(member_list) < min_size:
+                    continue
+                communities.append({
+                    "community_id": comm_id,
+                    "size": len(member_list),
+                    "members": member_list,
+                    "modularity": _modularity,
+                })
+            return communities, None
+        except Exception as exc:
+            logger.warning("[CommunityDiscovery] HGT-GKMeans failed: %s", exc)
+            return [], f"hgt_gkmeans_failed:{type(exc).__name__}:{exc}"
+
+    @staticmethod
+    def _has_hgt_embeddings(nodes: list[dict]) -> bool:
+        keys = {
+            "hgt_embedding", "hgtEmbedding", "graph_embedding", "graphEmbedding",
+            "aligned_embedding", "alignedEmbedding", "embedding", "vector",
+        }
+        covered = 0
+        for node in nodes:
+            props = node.get("properties", {}) if isinstance(node.get("properties"), dict) else {}
+            if any(isinstance(node.get(key, props.get(key)), list) for key in keys):
+                covered += 1
+        return covered >= max(2, int(len(nodes) * 0.6))
 
     @staticmethod
     def map_entities_to_communities(

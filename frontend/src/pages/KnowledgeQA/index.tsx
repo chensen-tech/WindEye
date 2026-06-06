@@ -4,6 +4,7 @@ import { Segmented, App, Drawer, Tag, Button, Tooltip } from 'antd'
 import { BugOutlined } from '@ant-design/icons'
 import { WorkspaceContainer } from './components/WorkspaceContainer'
 import { EnhancedGraphPanel, EnhancedGraphPanelHandle } from './components/EnhancedGraphPanel'
+import GlobalCommunityGraph from './components/GlobalCommunityGraph'
 import RiskReportPanel from './components/RiskReportPanel'
 import ComplianceAnalysisPanel from './components/ComplianceAnalysisPanel'
 import AgentTracePanel from './components/AgentTracePanel'
@@ -218,6 +219,9 @@ const KnowledgeQA: React.FC = () => {
     error,
     retryRiskQuery,
     agentTraces,
+    expandedCommunityResult,
+    expandedCommunityId,
+    selectedRiskPathId,
   } = useAgentStore()
 
   const { activeSessionId, updateCurrentSession, getActiveSession, createNewSession } =
@@ -229,6 +233,12 @@ const KnowledgeQA: React.FC = () => {
     id: string
     name: string
     type: string
+  } | null>(null)
+  const [contextInjectedEntity, setContextInjectedEntity] = useState<{
+    id: string
+    name: string
+    type: string
+    nonce: number
   } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [graphStats, setGraphStats] = useState<LegendStats | null>(null)
@@ -390,6 +400,18 @@ const KnowledgeQA: React.FC = () => {
       if (graphRef.current) {
         graphRef.current.searchAndExpand(entityId, entityType)
       }
+    },
+    []
+  )
+
+  const handleAddRiskSubjectToContext = useCallback(
+    (entityId: string, entityName: string, entityType: string) => {
+      setContextInjectedEntity({
+        id: entityId || entityName,
+        name: entityName || entityId,
+        type: entityType || 'COMPANY',
+        nonce: Date.now(),
+      })
     },
     []
   )
@@ -595,6 +617,7 @@ const KnowledgeQA: React.FC = () => {
                 highlightedEntity={highlightedEntity}
                 graphInjectedEntity={graphInjectedEntity}
                 onClearGraphInject={() => setGraphInjectedEntity(null)}
+                contextInjectedEntity={contextInjectedEntity}
               />
 
               {clarifyMessage && (
@@ -655,6 +678,7 @@ const KnowledgeQA: React.FC = () => {
                       { label: '图谱视图', value: 'graph' },
                       { label: '治理报告', value: 'risk' },
                       { label: '合规分析', value: 'compliance' },
+                      ...(expandedCommunityResult ? [{ label: '群体图谱', value: 'community_graph' as const }] : []),
                     ]}
                     value={activeRightPanel}
                     onChange={(val) =>
@@ -700,6 +724,7 @@ const KnowledgeQA: React.FC = () => {
                     isLoading={isLoading}
                     error={error}
                     onJumpToGraph={handleJumpToGraph}
+                    onAddToContext={handleAddRiskSubjectToContext}
                     onRetry={retryRiskQuery}
                     queryText={lastQueryText}
                     currentSubgraph={currentSubgraph}
@@ -715,6 +740,14 @@ const KnowledgeQA: React.FC = () => {
                     isLoading={isLoading}
                     onJumpToGraph={handleJumpToGraph}
                     complianceIndicators={complianceIndicators}
+                  />
+                ) : activeRightPanel === 'community_graph' ? (
+                  <GlobalCommunityGraph
+                    result={expandedCommunityResult}
+                    expandedCommunityId={expandedCommunityId}
+                    onExpandCommunity={(commId) =>
+                      useAgentStore.setState({ expandedCommunityId: commId })
+                    }
                   />
                 ) : (
                   <EnhancedGraphPanel

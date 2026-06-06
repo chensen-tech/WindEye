@@ -3,7 +3,6 @@ import {
   FileTextOutlined,
   ReloadOutlined,
   HistoryOutlined,
-  LinkOutlined,
   EyeOutlined,
   FilePdfOutlined,
   FileWordOutlined,
@@ -26,6 +25,7 @@ import {
   Typography,
   App,
   Tooltip,
+  Progress,
 } from 'antd';
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -65,6 +65,77 @@ const STAGE_LABELS: Record<string, string> = {
   compliance: '合规匹配',
   reporting: '报告生成',
 };
+
+type GovernancePhase = {
+  id: string;
+  title: string;
+  modules: string;
+  description: string;
+  stages: RiskStage['stage'][];
+};
+
+const GOVERNANCE_PHASES: GovernancePhase[] = [
+  {
+    id: 'entity',
+    title: '实体识别',
+    modules: 'Intent / Entity',
+    description: '意图识别、文件解析、实体对齐',
+    stages: ['planning'],
+  },
+  {
+    id: 'community',
+    title: '群体发现',
+    modules: 'Evidence / Community',
+    description: '证据子图、实体统计、群体发现',
+    stages: ['retrieving', 'entity_stats', 'community'],
+  },
+  {
+    id: 'risk_path',
+    title: '风险传导',
+    modules: 'RiskPath',
+    description: '风险路径枚举、异常关系识别',
+    stages: ['analyzing'],
+  },
+  {
+    id: 'compliance',
+    title: '合规分析',
+    modules: 'Compliance / Scoring',
+    description: '法规匹配、合规评分、风险定级',
+    stages: ['compliance'],
+  },
+  {
+    id: 'report',
+    title: '治理报告',
+    modules: 'Governance / Reporter',
+    description: '治理决策、报告生成、结果输出',
+    stages: ['reporting'],
+  },
+];
+
+function getGovernancePhaseForStage(stage: RiskStage): number {
+  const content = stage.content || '';
+  if (stage.stage === 'analyzing' && /风险评分|多维度风险评分/.test(content)) {
+    return 3;
+  }
+  if (stage.stage === 'analyzing' && /治理方案|治理决策|治理动作|协同治理方案/.test(content)) {
+    return 4;
+  }
+
+  const matched = GOVERNANCE_PHASES.findIndex((phase) => phase.stages.includes(stage.stage));
+  return matched >= 0 ? matched : 0;
+}
+
+function getGovernancePhaseIndex(stages: RiskStage[], report: RiskReport | null): number {
+  if (report) return GOVERNANCE_PHASES.length;
+  if (!stages.length) return 0;
+
+  return Math.max(...stages.map(getGovernancePhaseForStage));
+}
+
+function getGovernanceProgressPercent(activePhase: number, report: RiskReport | null): number {
+  if (report) return 100;
+  return Math.min(95, Math.max(8, Math.round(((activePhase + 0.35) / GOVERNANCE_PHASES.length) * 100)));
+}
 
 function inferClientEntityType(name: string): string {
   if (!name) return 'COMPANY'
@@ -134,6 +205,7 @@ interface RiskReportPanelProps {
   error: string | null;
   onRetry?: () => void;
   onJumpToGraph?: (entityId: string, entityName: string, entityType: string) => void;
+  onAddToContext?: (entityId: string, entityName: string, entityType: string) => void;
   queryText?: string;
   currentSubgraph?: Subgraph | null;
   resolvedEntities?: ResolvedEntity[];
@@ -151,6 +223,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
   error,
   onRetry,
   onJumpToGraph,
+  onAddToContext,
   queryText,
   currentSubgraph,
   resolvedEntities,
@@ -161,10 +234,17 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyReports, setHistoryReports] = useState<ReportHistoryItem[]>([]);
   const [showAllPaths, setShowAllPaths] = useState(false);
-  const [riskPathMode, setRiskPathMode] = useState<'community' | 'node'>('community');
   const [communityNodePositions, setCommunityNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [draggingCommunityNodeId, setDraggingCommunityNodeId] = useState<string | null>(null);
   const [hoveredCommunityNodeId, setHoveredCommunityNodeId] = useState<string | null>(null);
+  const [communityViewport, setCommunityViewport] = useState({ x: 0, y: 0, scale: 1 });
+  const [communityPanStart, setCommunityPanStart] = useState<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    viewX: number;
+    viewY: number;
+  } | null>(null);
   const [highlightSection, setHighlightSection] = useState<string | null>(null);
   const finalReportRef = useRef<HTMLDivElement>(null);
 
@@ -213,10 +293,9 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
     return { highCount: high, mediumCount: medium, lowCount: low, sortedEntities: sorted };
   }, [report]);
 
-  const stageOrder: RiskStage['stage'][] = ['planning', 'retrieving', 'entity_stats', 'community', 'analyzing', 'compliance', 'reporting'];
-  const completedStages = new Set(stages.map((s) => s.stage));
-  const currentStageIdx = stageOrder.findIndex((s) => !completedStages.has(s));
-  const activeStep = currentStageIdx >= 0 ? currentStageIdx : stageOrder.length;
+  const activeGovernancePhase = getGovernancePhaseIndex(stages, report);
+  const governanceProgressPercent = getGovernanceProgressPercent(activeGovernancePhase, report);
+  const latestStageText = stages[stages.length - 1]?.content || '正在创建协同治理上下文...';
 
   const loadHistory = async () => {
     setHistoryOpen(true);
@@ -304,27 +383,6 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
     const el = document.getElementById(`risk-section-${key}`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-
-  // ── Empty state ──
-  if (!report && !isLoading && stages.length === 0) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <div>
-              <Text style={{ color: '#475569', fontSize: 14, display: 'block' }}>
-                输入协同治理相关问题，生成协同治理报告
-              </Text>
-              <Text style={{ color: '#94A3B8', fontSize: 12 }}>
-                任务规划 → 图谱检索 → 实体统计 → 群体发现 → 协同治理 → 合规匹配 → 报告生成
-              </Text>
-            </div>
-          }
-        />
-      </div>
-    );
-  }
 
   const sortedPaths = useMemo(() => {
     if (!report?.risk_paths) return [];
@@ -422,7 +480,8 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
   const communityPreviewGraph = useMemo(() => {
     const graphNodes = connectedCommunitySubgraph?.nodes || communitySubgraph?.nodes || currentSubgraph?.nodes || [];
     const graphEdges = connectedCommunitySubgraph?.edges || communitySubgraph?.edges || currentSubgraph?.edges || [];
-    const nodes = graphNodes.slice(0, 38).map((node: any, index: number) => {
+    const maxPreviewNodes = Math.max(72, Math.min(120, communities.length * 16));
+    const normalizedNodes: any[] = graphNodes.map((node: any, index: number) => {
       const id = String(node.id || getNodeDisplayName(node) || index);
       const name = getNodeDisplayName(node) || id;
       return {
@@ -431,46 +490,77 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
         type: getNodeDisplayType(node),
         communityId: communityIdByNode.get(id) ?? communityIdByNode.get(name),
         isSeed: seedFlowNodes.some((seed) => seed.id === id || seed.name === name),
+        degree: 0,
+        radius: 2.1,
         x: 50,
         y: 50,
       };
     });
-    const centers = [
-      { x: 28, y: 36 },
-      { x: 66, y: 34 },
-      { x: 36, y: 68 },
-      { x: 72, y: 68 },
-      { x: 50, y: 50 },
-      { x: 18, y: 58 },
-    ];
-    const grouped = new Map<string, typeof nodes>();
-    nodes.forEach((node) => {
+
+    const rawGroups = new Map<string, any[]>();
+    normalizedNodes.forEach((node: any) => {
       const key = node.communityId !== undefined ? String(node.communityId) : 'unknown';
-      grouped.set(key, [...(grouped.get(key) || []), node]);
+      rawGroups.set(key, [...(rawGroups.get(key) || []), node]);
     });
-    Array.from(grouped.entries()).forEach(([key, group], groupIndex) => {
-      const center = centers[groupIndex % centers.length];
-      const radius = group.length <= 1 ? 0 : Math.min(17, 8 + group.length * 1.4);
-      group.forEach((node, index) => {
-        const angle = (Math.PI * 2 * index) / Math.max(group.length, 1) - Math.PI / 2;
-        node.x = Math.max(6, Math.min(94, center.x + Math.cos(angle) * radius));
-        node.y = Math.max(10, Math.min(90, center.y + Math.sin(angle) * radius));
-        if (key === 'unknown') {
-          node.x = 14 + ((index * 23) % 72);
-          node.y = 18 + ((index * 31) % 62);
-        }
-      });
-    });
-    nodes.forEach((node) => {
-      const moved = communityNodePositions[node.id];
-      if (moved) {
-        node.x = moved.x;
-        node.y = moved.y;
+    communities.forEach((comm: any) => {
+      const cid = String(comm.community_id ?? comm.id ?? 0);
+      const existingGroup = rawGroups.get(cid) || [];
+      if (existingGroup.length === 0) {
+        const members = comm.members || comm.top_entities || [];
+        const representativeMembers = members.length > 0
+          ? members.slice(0, 8)
+          : [{ id: `community-${cid}`, name: `群体 #${cid}`, type: 'Community' }];
+        rawGroups.set(cid, representativeMembers.map((member: any, index: number) => {
+          const name = String(member?.name || member || `群体 #${cid}`);
+          return {
+            id: String(member?.id || `community-${cid}-member-${index}`),
+            name,
+            type: member?.type || 'Entity',
+            communityId: Number(cid),
+            isSeed: false,
+            degree: 0,
+            radius: 1.8,
+            x: 50,
+            y: 50,
+          };
+        }));
       }
     });
-    const nodeById = new Map<string, any>(nodes.map((node) => [node.id, node]));
-    const nodeByName = new Map<string, any>(nodes.map((node) => [node.name, node]));
-    const edges = graphEdges
+
+    const groupOrder = Array.from(rawGroups.entries()).sort((a, b) => {
+      if (a[0] === 'unknown') return 1;
+      if (b[0] === 'unknown') return -1;
+      return Number(a[0]) - Number(b[0]);
+    });
+    const selectedById = new Map<string, any>();
+    const perGroupFloor = Math.max(4, Math.floor(maxPreviewNodes / Math.max(groupOrder.length, 1)));
+    groupOrder.forEach(([, group]) => {
+      const sorted = [...group].sort((a: any, b: any) => {
+        if (a.isSeed && !b.isSeed) return -1;
+        if (!a.isSeed && b.isSeed) return 1;
+        return a.name.localeCompare(b.name, 'zh-Hans-CN');
+      });
+      sorted.slice(0, perGroupFloor).forEach((node: any) => selectedById.set(node.id, node));
+    });
+    let roundRobinIndex = 0;
+    while (selectedById.size < maxPreviewNodes) {
+      let added = false;
+      for (const [, group] of groupOrder) {
+        const node = group[roundRobinIndex + perGroupFloor];
+        if (node && !selectedById.has(node.id)) {
+          selectedById.set(node.id, node);
+          added = true;
+          if (selectedById.size >= maxPreviewNodes) break;
+        }
+      }
+      if (!added) break;
+      roundRobinIndex += 1;
+    }
+
+    const nodes: any[] = Array.from(selectedById.values());
+    const nodeById = new Map<string, any>(nodes.map((node: any) => [node.id, node]));
+    const nodeByName = new Map<string, any>(nodes.map((node: any) => [node.name, node]));
+    const edges: any[] = graphEdges
       .map((edge: any) => {
         const sourceKey = getEdgeEndpoint(edge, 'source');
         const targetKey = getEdgeEndpoint(edge, 'target');
@@ -485,20 +575,138 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
         };
       })
       .filter(Boolean)
-      .slice(0, 90);
-    return { nodes, edges, groups: Array.from(grouped.entries()) };
+      .slice(0, 120);
+
+    edges.forEach((edge: any) => {
+      edge.source.degree = (edge.source.degree || 0) + 1;
+      edge.target.degree = (edge.target.degree || 0) + 1;
+    });
+    nodes.forEach((node: any) => {
+      node.radius = node.isSeed
+        ? Math.min(3.8, 2.5 + Math.sqrt(node.degree || 1) * 0.35)
+        : Math.min(2.55, 1.35 + Math.sqrt(node.degree || 1) * 0.24);
+    });
+
+    const grouped = new Map<string, any[]>();
+    nodes.forEach((node: any) => {
+      const key = node.communityId !== undefined ? String(node.communityId) : 'unknown';
+      grouped.set(key, [...(grouped.get(key) || []), node]);
+    });
+    const groups = Array.from(grouped.entries()).sort((a, b) => {
+      if (a[0] === 'unknown') return 1;
+      if (b[0] === 'unknown') return -1;
+      return b[1].length - a[1].length;
+    });
+    const knownGroupCount = groups.filter(([key]) => key !== 'unknown').length;
+    const columns = knownGroupCount <= 2 ? knownGroupCount || 1 : Math.ceil(Math.sqrt(knownGroupCount));
+    const rows = Math.max(1, Math.ceil(Math.max(knownGroupCount, 1) / Math.max(columns, 1)));
+    const cellWidth = 86 / Math.max(columns, 1);
+    const cellHeight = 76 / rows;
+    const communityCenters = groups.map(([key], index) => {
+      if (groups.length === 1) return { x: 50, y: 50, cellWidth: 86, cellHeight: 76 };
+      if (key === 'unknown') return { x: 50, y: 91, cellWidth: 32, cellHeight: 16 };
+      const knownIndex = groups.slice(0, index).filter(([groupKey]) => groupKey !== 'unknown').length;
+      const col = knownIndex % Math.max(columns, 1);
+      const row = Math.floor(knownIndex / Math.max(columns, 1));
+      return {
+        x: 7 + cellWidth * (col + 0.5),
+        y: 12 + cellHeight * (row + 0.5),
+        cellWidth,
+        cellHeight,
+      };
+    });
+
+    groups.forEach(([key, group], groupIndex) => {
+      const center = key === 'unknown' && groups.length > 1
+        ? { x: 50, y: 84, cellWidth: 32, cellHeight: 16 }
+        : communityCenters[groupIndex];
+      const sortedGroup = [...group].sort((a: any, b: any) => {
+        if (a.isSeed && !b.isSeed) return -1;
+        if (!a.isSeed && b.isSeed) return 1;
+        return (b.degree || 0) - (a.degree || 0);
+      });
+      const anchor = sortedGroup[0];
+      const orbitNodes = sortedGroup.slice(1);
+      if (anchor) {
+        anchor.x = center.x;
+        anchor.y = center.y;
+      }
+      const orbitRadiusX = groups.length === 1
+        ? Math.min(34, Math.max(20, 10 + Math.sqrt(group.length) * 4.6))
+        : Math.min(center.cellWidth * 0.34, Math.max(5.5, Math.sqrt(group.length) * 2.2));
+      const orbitRadiusY = groups.length === 1
+        ? Math.min(27, Math.max(16, 8 + Math.sqrt(group.length) * 3.6))
+        : Math.min(center.cellHeight * 0.34, Math.max(5, Math.sqrt(group.length) * 1.9));
+      orbitNodes.forEach((node: any, index: number) => {
+        const angle = (Math.PI * 2 * index) / Math.max(orbitNodes.length, 1) - Math.PI / 2;
+        node.x = Math.max(7, Math.min(93, center.x + Math.cos(angle) * orbitRadiusX));
+        node.y = Math.max(10, Math.min(90, center.y + Math.sin(angle) * orbitRadiusY));
+      });
+    });
+
+    nodes.forEach((node: any) => {
+      const moved = communityNodePositions[node.id];
+      if (moved) {
+        node.x = moved.x;
+        node.y = moved.y;
+      }
+    });
+
+    const groupHulls = groups.map(([key, group], index) => {
+      const xs = group.map((node: any) => node.x);
+      const ys = group.map((node: any) => node.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      return {
+        key,
+        nodes: group,
+        index,
+        cx: (minX + maxX) / 2,
+        cy: (minY + maxY) / 2,
+        rx: Math.max(8, (maxX - minX) / 2 + 4.5),
+        ry: Math.max(7, (maxY - minY) / 2 + 4),
+      };
+    });
+
+    return { nodes, edges, groups, groupHulls };
   }, [connectedCommunitySubgraph, communitySubgraph, currentSubgraph, communityIdByNode, seedFlowNodes, communityNodePositions]);
 
   const getCommunitySvgPoint = useCallback((event: React.PointerEvent<SVGElement>) => {
     const svg = event.currentTarget instanceof SVGSVGElement
       ? event.currentTarget
       : event.currentTarget.ownerSVGElement;
-    const rect = svg?.getBoundingClientRect();
-    if (!rect || rect.width === 0 || rect.height === 0) return { x: 50, y: 50 };
+    if (!svg) return { x: 50, y: 50 };
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return { x: 50, y: 50 };
+    const raw = point.matrixTransform(matrix.inverse());
     return {
-      x: Math.max(4, Math.min(96, ((event.clientX - rect.left) / rect.width) * 100)),
-      y: Math.max(8, Math.min(92, ((event.clientY - rect.top) / rect.height) * 100)),
+      x: Math.max(4, Math.min(96, (raw.x - communityViewport.x) / communityViewport.scale)),
+      y: Math.max(8, Math.min(92, (raw.y - communityViewport.y) / communityViewport.scale)),
     };
+  }, [communityViewport]);
+
+  const getCommunityRawPoint = useCallback((event: React.PointerEvent<SVGElement>) => {
+    const svg = event.currentTarget instanceof SVGSVGElement
+      ? event.currentTarget
+      : event.currentTarget.ownerSVGElement;
+    if (!svg) return { x: 50, y: 50 };
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return { x: 50, y: 50 };
+    const raw = point.matrixTransform(matrix.inverse());
+    return { x: raw.x, y: raw.y };
+  }, []);
+
+  const resetCommunityViewport = useCallback(() => {
+    setCommunityViewport({ x: 0, y: 0, scale: 1 });
+    setCommunityPanStart(null);
   }, []);
 
   const handleCommunityNodePointerDown = useCallback((event: React.PointerEvent<SVGGElement>, nodeId: string) => {
@@ -510,15 +718,51 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
     setCommunityNodePositions((prev) => ({ ...prev, [nodeId]: point }));
   }, [getCommunitySvgPoint]);
 
+  const handleCommunityCanvasPointerDown = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const point = getCommunityRawPoint(event);
+    setCommunityPanStart({
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      viewX: communityViewport.x,
+      viewY: communityViewport.y,
+    });
+  }, [communityViewport, getCommunityRawPoint]);
+
   const handleCommunityGraphPointerMove = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
-    if (!draggingCommunityNodeId) return;
-    const point = getCommunitySvgPoint(event);
-    setCommunityNodePositions((prev) => ({ ...prev, [draggingCommunityNodeId]: point }));
-  }, [draggingCommunityNodeId, getCommunitySvgPoint]);
+    if (draggingCommunityNodeId) {
+      const point = getCommunitySvgPoint(event);
+      setCommunityNodePositions((prev) => ({ ...prev, [draggingCommunityNodeId]: point }));
+      return;
+    }
+    if (communityPanStart) {
+      const point = getCommunityRawPoint(event);
+      setCommunityViewport((prev) => ({
+        ...prev,
+        x: Math.max(-80, Math.min(80, communityPanStart.viewX + point.x - communityPanStart.startX)),
+        y: Math.max(-80, Math.min(80, communityPanStart.viewY + point.y - communityPanStart.startY)),
+      }));
+    }
+  }, [communityPanStart, draggingCommunityNodeId, getCommunityRawPoint, getCommunitySvgPoint]);
 
   const stopCommunityGraphDrag = useCallback(() => {
     setDraggingCommunityNodeId(null);
+    setCommunityPanStart(null);
   }, []);
+
+  const handleCommunityWheel = useCallback((event: React.WheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    const nextScale = Math.max(0.75, Math.min(2.4, communityViewport.scale + (event.deltaY > 0 ? -0.12 : 0.12)));
+    setCommunityViewport((prev) => ({
+      ...prev,
+      scale: nextScale,
+      x: Math.max(-80, Math.min(80, prev.x * (nextScale / prev.scale))),
+      y: Math.max(-80, Math.min(80, prev.y * (nextScale / prev.scale))),
+    }));
+  }, [communityViewport.scale]);
 
   const flowKeys = Array.isArray(seededCommunityData.visualization?.flow)
     ? seededCommunityData.visualization.flow
@@ -537,112 +781,83 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
     { key: 'communities', title: flowLabelMap[flowKeys[3]] || '群体结果', value: communities.length, desc: '社区划分' },
   ];
   const compactSeedNames = seedFlowNodes.slice(0, 3).map((node) => node.name);
-  const visibleCommunities = communities.slice(0, 6);
+  const visibleCommunities = communities;
 
-  const riskTransmissionGraph = useMemo(() => {
-    const levelOrder = { high: 0, medium: 1, low: 2 };
-    const communityNodes = new Map<number, {
-      id: number;
-      size: number;
-      label: string;
-      pathCount: number;
-      highCount: number;
-      mediumCount: number;
-      sampleEntities: string[];
-      x: number;
-      y: number;
-    }>();
-    const communityEdges = new Map<string, {
-      source: number;
-      target: number;
-      count: number;
-      level: 'high' | 'medium' | 'low';
-      pathIds: string[];
-    }>();
+  const hasFinalReportText = Boolean(report?.executive_summary || report?.markdown_report || report?.integrated_report);
+  const hasRiskPathResult = sortedPaths.length > 0;
+  const hasCommunityResult = communities.length > 0 || subgraphCounts.nodes > 0 || riskSubjects.length > 0;
+  const isInsufficientEvidence = String(report?.overall_risk_level || '') === 'insufficient_evidence'
+    || report?.risk_scores?.level === 'insufficient_evidence';
+  const partialMissingItems = [
+    !hasRiskPathResult ? '风险传导路径' : '',
+    !(report?.compliance_matches?.length) ? '合规匹配' : '',
+    !hasFinalReportText ? '完整报告正文' : '',
+  ].filter(Boolean);
+  const reportCompletenessLabel = hasFinalReportText && hasRiskPathResult
+    ? '完整报告'
+    : isInsufficientEvidence
+      ? '证据不足报告'
+      : '部分结果';
+  const fallbackExecutiveSummary = report
+    ? `当前已完成${riskSubjects.length || totalEntities || 0}个风险主体识别${hasCommunityResult ? '、群体发现' : ''}${hasRiskPathResult ? '、风险路径分析' : ''}。${partialMissingItems.length > 0 ? `尚缺少${partialMissingItems.join('、')}，建议确认实体别名并补齐图谱关系后重新分析。` : '正在汇总治理结论。'}`
+    : '';
 
-    communities.forEach((comm: any) => {
-      const cid = Number(comm.community_id ?? comm.id ?? 0);
-      const members = comm.members || comm.top_entities || [];
-      communityNodes.set(cid, {
-        id: cid,
-        size: Number(comm.size || members.length || 0),
-        label: `群体 #${cid}`,
-        pathCount: 0,
-        highCount: 0,
-        mediumCount: 0,
-        sampleEntities: members.slice(0, 3).map((m: any) => m.name || String(m.id || '')),
-        x: 50,
-        y: 50,
-      });
-    });
+  // ── Empty state ──
+  if (!report && !isLoading && stages.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <div>
+              <Text style={{ color: '#475569', fontSize: 14, display: 'block' }}>
+                输入协同治理相关问题，生成协同治理报告
+              </Text>
+              <Text style={{ color: '#94A3B8', fontSize: 12 }}>
+                实体识别 → 群体发现 → 风险传导 → 合规分析 → 治理报告
+              </Text>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
 
-    const pathRows = sortedPaths.map((path) => {
-      const entitySteps = (path.affected_entities || []).map((name) => {
-        const cid = communityIdByNode.get(name);
-        return {
-          name,
-          type: inferClientEntityType(name),
-          communityId: cid,
-        };
-      });
-      const communitySequence = entitySteps
-        .map((step) => step.communityId)
-        .filter((cid): cid is number => cid !== undefined && cid !== null)
-        .filter((cid, index, arr) => index === 0 || cid !== arr[index - 1]);
-
-      communitySequence.forEach((cid) => {
-        const node = communityNodes.get(cid) || {
-          id: cid,
-          size: 0,
-          label: `群体 #${cid}`,
-          pathCount: 0,
-          highCount: 0,
-          mediumCount: 0,
-          sampleEntities: [],
-          x: 50,
-          y: 50,
-        };
-        node.pathCount += 1;
-        if (path.risk_level === 'high') node.highCount += 1;
-        if (path.risk_level === 'medium') node.mediumCount += 1;
-        communityNodes.set(cid, node);
-      });
-
-      for (let i = 0; i < communitySequence.length - 1; i += 1) {
-        const source = communitySequence[i];
-        const target = communitySequence[i + 1];
-        const key = `${source}->${target}`;
-        const current = communityEdges.get(key) || { source, target, count: 0, level: path.risk_level, pathIds: [] };
-        current.count += 1;
-        current.pathIds.push(path.path_id);
-        if ((levelOrder[path.risk_level] ?? 3) < (levelOrder[current.level] ?? 3)) {
-          current.level = path.risk_level;
-        }
-        communityEdges.set(key, current);
-      }
-
-      return {
-        path,
-        entitySteps,
-        communitySequence,
-      };
-    });
-
-    const nodes = Array.from(communityNodes.values())
-      .filter((node) => node.pathCount > 0 || communities.length <= 6)
-      .slice(0, 10);
-    const centerX = 50;
-    const centerY = 48;
-    const radius = nodes.length <= 3 ? 26 : 34;
-    nodes.forEach((node, index) => {
-      const angle = nodes.length === 1 ? -Math.PI / 2 : (Math.PI * 2 * index) / nodes.length - Math.PI / 2;
-      node.x = nodes.length === 1 ? centerX : centerX + Math.cos(angle) * radius;
-      node.y = nodes.length === 1 ? centerY : centerY + Math.sin(angle) * Math.min(radius, 28);
-    });
-    const nodeSet = new Set(nodes.map((node) => node.id));
-    const edges = Array.from(communityEdges.values()).filter((edge) => nodeSet.has(edge.source) && nodeSet.has(edge.target));
-    return { nodes, edges, pathRows };
-  }, [sortedPaths, communities, communityIdByNode]);
+  if (!report && !isLoading && stages.length > 0) {
+    return (
+      <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px' }}>
+        <Card
+          bordered
+          style={{ maxWidth: 720, margin: '40px auto', borderRadius: 8, borderColor: '#dbeafe' }}
+        >
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <div>
+                <Text strong style={{ color: '#1e293b', fontSize: 15, display: 'block', marginBottom: 6 }}>
+                  本轮分析尚未形成完整治理报告
+                </Text>
+                <Text style={{ color: '#64748b', fontSize: 13 }}>
+                  已完成阶段：{stages.length} 个；最新状态：{stages[stages.length - 1]?.content || '等待报告生成'}。
+                </Text>
+              </div>
+            }
+          />
+          <Steps
+            size="small"
+            direction="vertical"
+            style={{ marginTop: 18 }}
+            current={Math.max(stages.length - 1, 0)}
+            items={stages.slice(-6).map((stage) => ({
+              title: STAGE_LABELS[stage.stage] || stage.stage,
+              description: stage.content,
+              status: 'finish' as const,
+            }))}
+          />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="risk-report-panel" style={{ height: '100%', overflow: 'auto', padding: '12px 16px' }}>
@@ -660,34 +875,52 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
       `}</style>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* ── Progress indicator ── */}
-        {isLoading && stages.length > 0 && (
-          <Card size="small" style={{ borderRadius: 8 }} className="no-print">
+        {/* ── Loading path module progress ── */}
+        {isLoading && !report && (
+          <Card
+            size="small"
+            className="no-print"
+            style={{ borderRadius: 8, borderColor: '#dbeafe', background: '#ffffff' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+              <div>
+                <Text strong style={{ fontSize: 14, color: '#0f172a' }}>协同治理模块调用进度</Text>
+                <div style={{ marginTop: 2 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {latestStageText}
+                  </Text>
+                </div>
+              </div>
+              <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                {Math.min(activeGovernancePhase + 1, GOVERNANCE_PHASES.length)} / {GOVERNANCE_PHASES.length}
+              </Tag>
+            </div>
+            <Progress
+              percent={governanceProgressPercent}
+              showInfo={false}
+              strokeColor="#2855D1"
+              trailColor="#e2e8f0"
+              size="small"
+              style={{ marginBottom: 12 }}
+            />
             <Steps
               size="small"
-              current={activeStep}
+              current={activeGovernancePhase}
               status={error ? 'error' : 'process'}
-              items={stageOrder.map((key) => ({
-                title: STAGE_LABELS[key as keyof typeof STAGE_LABELS] || key,
+              items={GOVERNANCE_PHASES.map((phase, index) => ({
+                title: phase.title,
+                description: (
+                  <div style={{ minHeight: 42 }}>
+                    <div style={{ color: index === activeGovernancePhase ? '#2855D1' : '#64748b', fontSize: 12, lineHeight: 1.4 }}>
+                      {phase.modules}
+                    </div>
+                    <div style={{ color: '#94a3b8', fontSize: 11, lineHeight: 1.4 }}>
+                      {phase.description}
+                    </div>
+                  </div>
+                ),
               }))}
             />
-            <div style={{ marginTop: 8, textAlign: 'center' }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {stages[stages.length - 1]?.content || '初始化中...'}
-              </Text>
-            </div>
-          </Card>
-        )}
-
-        {/* ── Loading state ── */}
-        {isLoading && !report && stages.length === 0 && (
-          <Card style={{ borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
-            <div style={{ textAlign: 'center' }}>
-              <Spin size="large" />
-              <div style={{ marginTop: 16, color: '#94a3b8', fontSize: 14 }}>
-                正在初始化协同治理流程...
-              </div>
-            </div>
           </Card>
         )}
 
@@ -781,6 +1014,40 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                   </React.Fragment>
                 ))}
               </div>
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: hasFinalReportText && hasRiskPathResult ? '#f0fdf4' : '#fff7e6',
+                  border: hasFinalReportText && hasRiskPathResult ? '1px solid #bbf7d0' : '1px solid #ffd591',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <Space size={6} wrap>
+                  <Tag color={hasFinalReportText && hasRiskPathResult ? 'success' : isInsufficientEvidence ? 'default' : 'warning'} style={{ margin: 0 }}>
+                    {reportCompletenessLabel}
+                  </Tag>
+                  <Text style={{ fontSize: 12, color: '#475569' }}>
+                    已展示：{[
+                      riskSubjects.length ? '风险主体' : '',
+                      hasCommunityResult ? '群体发现' : '',
+                      hasRiskPathResult ? '风险传导' : '',
+                      report?.compliance_matches?.length ? '合规分析' : '',
+                      hasFinalReportText ? '报告正文' : '',
+                    ].filter(Boolean).join('、') || '等待结果'}
+                  </Text>
+                </Space>
+                {partialMissingItems.length > 0 && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    待补充：{partialMissingItems.join('、')}
+                  </Text>
+                )}
+              </div>
             </Card>
 
             {/* ═══ Section 1: 风险主体 ═══ */}
@@ -812,14 +1079,19 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                             borderRadius: 6,
                             fontSize: 12,
                             padding: '4px 8px',
-                            cursor: onJumpToGraph ? 'pointer' : 'default',
+                            cursor: onAddToContext ? 'pointer' : 'default',
                             background: `${color}10`,
                             border: `1px solid ${color}40`,
                             color,
                           }}
-                          onClick={() => onJumpToGraph?.(entity.id, entity.name, entity.type)}
+                          onClick={() => {
+                            onAddToContext?.(entity.id, entity.name, entity.type);
+                            if (onAddToContext) {
+                              message.success(`已加入对话上下文：${entity.name}`);
+                            }
+                          }}
+                          title={onAddToContext ? '加入对话上下文' : undefined}
                         >
-                          {onJumpToGraph ? <LinkOutlined style={{ marginRight: 4, fontSize: 10 }} /> : null}
                           {entity.name}
                           <span style={{ color: '#94a3b8', marginLeft: 6, fontSize: 10 }}>{label}</span>
                         </Tag>
@@ -913,15 +1185,12 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                           </span>
                         );
                       })}
-                      {communities.length > visibleCommunities.length && (
-                        <Text type="secondary" style={{ fontSize: 11 }}>+{communities.length - visibleCommunities.length} 个群体</Text>
-                      )}
                     </div>
                   </div>
 
                   <div
                     style={{
-                      minHeight: 430,
+                      minHeight: 520,
                       borderRadius: 8,
                       border: '1px solid #e2e8f0',
                       background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
@@ -935,12 +1204,15 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                         <Text strong style={{ fontSize: 14, display: 'block' }}>群体发现子图</Text>
                         <Text type="secondary" style={{ fontSize: 10 }}>
                           {connectedSubgraphCounts.nodes || subgraphCounts.nodes} 节点 / {connectedSubgraphCounts.edges || subgraphCounts.edges} 关系
-                          {communityPreviewGraph.nodes.length < (connectedSubgraphCounts.nodes || subgraphCounts.nodes) && ` · 当前展示前 ${communityPreviewGraph.nodes.length} 个代表节点`}
+                          {communityPreviewGraph.nodes.length < (connectedSubgraphCounts.nodes || subgraphCounts.nodes) && ` · 当前展示 ${communityPreviewGraph.groups.length} 个群体的 ${communityPreviewGraph.nodes.length} 个代表节点`}
                         </Text>
                       </div>
                       <Space size={6}>
                         {communityAlgorithm && <Tag style={{ fontSize: 10, margin: 0 }}>算法: {communityAlgorithm}</Tag>}
-                        {Object.keys(communityNodePositions).length > 0 && (
+                        {(Object.keys(communityNodePositions).length > 0
+                          || communityViewport.x !== 0
+                          || communityViewport.y !== 0
+                          || communityViewport.scale !== 1) && (
                           <Button
                             size="small"
                             type="text"
@@ -948,6 +1220,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                             onClick={() => {
                               setCommunityNodePositions({});
                               setDraggingCommunityNodeId(null);
+                              resetCommunityViewport();
                             }}
                             style={{ fontSize: 11, height: 24, padding: '0 6px' }}
                           >
@@ -956,70 +1229,138 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                         )}
                       </Space>
                     </div>
-                    <div style={{ position: 'relative', height: 360, borderRadius: 8, background: '#ffffff', border: '1px solid #dbeafe', overflow: 'hidden' }}>
+                    <div style={{ position: 'relative', height: 440, borderRadius: 8, background: '#ffffff', border: '1px solid #dbeafe', overflow: 'hidden' }}>
                       {communityPreviewGraph.nodes.length > 0 ? (
                         <svg
                           viewBox="0 0 100 100"
-                          preserveAspectRatio="none"
+                          preserveAspectRatio="xMidYMid meet"
+                          onPointerDown={handleCommunityCanvasPointerDown}
                           onPointerMove={handleCommunityGraphPointerMove}
                           onPointerUp={stopCommunityGraphDrag}
                           onPointerLeave={stopCommunityGraphDrag}
+                          onWheel={handleCommunityWheel}
                           style={{
                             width: '100%',
                             height: '100%',
                             display: 'block',
-                            cursor: draggingCommunityNodeId ? 'grabbing' : 'default',
+                            cursor: draggingCommunityNodeId || communityPanStart ? 'grabbing' : 'grab',
                             touchAction: 'none',
                           }}
                         >
                           <defs>
                             <filter id="communityNodeShadow" x="-50%" y="-50%" width="200%" height="200%">
-                              <feDropShadow dx="0" dy="1" stdDeviation="1.2" floodColor="#0f172a" floodOpacity="0.18" />
+                              <feDropShadow dx="0" dy="1.5" stdDeviation="1.8" floodColor="#1d4ed8" floodOpacity="0.22" />
                             </filter>
+                            <marker
+                              id="communityArrow"
+                              viewBox="0 0 10 10"
+                              refX="8.5"
+                              refY="5"
+                              markerWidth="4"
+                              markerHeight="4"
+                              orient="auto-start-reverse"
+                            >
+                              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" opacity="0.72" />
+                            </marker>
                           </defs>
-                          {communityPreviewGraph.groups.map(([groupKey, groupNodes]: any, groupIndex: number) => {
-                            if (groupKey === 'unknown' || !groupNodes.length) return null;
+                          <g transform={`translate(${communityViewport.x} ${communityViewport.y}) scale(${communityViewport.scale})`}>
+                          {communityPreviewGraph.groupHulls.map((hull: any) => {
+                            if (hull.key === 'unknown' || !hull.nodes.length) return null;
+                            const groupKey = hull.key;
                             const color = COMMUNITY_PALETTE[Number(groupKey) % COMMUNITY_PALETTE.length];
-                            const avgX = groupNodes.reduce((sum: number, node: any) => sum + node.x, 0) / groupNodes.length;
-                            const avgY = groupNodes.reduce((sum: number, node: any) => sum + node.y, 0) / groupNodes.length;
-                            const radius = Math.min(28, Math.max(12, 7 + groupNodes.length * 1.8));
                             return (
-                              <circle
-                                key={groupKey}
-                                cx={avgX}
-                                cy={avgY}
-                                r={radius}
-                                fill={`${color}10`}
-                                stroke={`${color}35`}
-                                strokeWidth="0.5"
-                                strokeDasharray="2 1.5"
-                              />
+                              <g key={groupKey}>
+                                <ellipse
+                                  cx={hull.cx}
+                                  cy={hull.cy}
+                                  rx={hull.rx}
+                                  ry={hull.ry}
+                                  fill={`${color}0f`}
+                                  stroke={`${color}45`}
+                                  strokeWidth="0.7"
+                                  strokeDasharray="2.2 1.6"
+                                  vectorEffect="non-scaling-stroke"
+                                />
+                                <text
+                                  x={hull.cx - hull.rx + 2}
+                                  y={Math.max(6, hull.cy - hull.ry + 4)}
+                                  fontSize="2.4"
+                                  fill={color}
+                                  fontWeight="700"
+                                >
+                                  群体 #{groupKey}
+                                </text>
+                              </g>
                             );
                           })}
-                          {communityPreviewGraph.edges.map((edge: any, index: number) => (
-                            <line
-                              key={`${edge.id}-${index}`}
-                              x1={edge.source.x}
-                              y1={edge.source.y}
-                              x2={edge.target.x}
-                              y2={edge.target.y}
-                              stroke="#94a3b8"
-                              strokeWidth="0.42"
-                              strokeOpacity="0.55"
-                              vectorEffect="non-scaling-stroke"
-                            >
-                              <title>{edge.relation || '关系'}</title>
-                            </line>
-                          ))}
+                          {communityPreviewGraph.edges.map((edge: any, index: number) => {
+                            const dx = edge.target.x - edge.source.x;
+                            const dy = edge.target.y - edge.source.y;
+                            const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+                            const sx = edge.source.x + (dx / len) * (edge.source.radius + 0.6);
+                            const sy = edge.source.y + (dy / len) * (edge.source.radius + 0.6);
+                            const tx = edge.target.x - (dx / len) * (edge.target.radius + 1.0);
+                            const ty = edge.target.y - (dy / len) * (edge.target.radius + 1.0);
+                            const label = String(edge.relation || '').slice(0, 8);
+                            const showEdgeLabel = Boolean(label)
+                              && (hoveredCommunityNodeId === edge.source.id || hoveredCommunityNodeId === edge.target.id);
+                            return (
+                              <g key={`${edge.id}-${index}`}>
+                                <line
+                                  x1={sx}
+                                  y1={sy}
+                                  x2={tx}
+                                  y2={ty}
+                                  stroke="#2563eb"
+                                  strokeWidth={edge.source.isSeed || edge.target.isSeed ? 0.82 : 0.58}
+                                  strokeOpacity="0.58"
+                                  markerEnd="url(#communityArrow)"
+                                  vectorEffect="non-scaling-stroke"
+                                >
+                                  <title>{edge.relation || '关系'}</title>
+                                </line>
+                                {showEdgeLabel && (
+                                  <g style={{ pointerEvents: 'none' }}>
+                                    <rect
+                                      x={(sx + tx) / 2 - Math.max(5, label.length * 1.35)}
+                                      y={(sy + ty) / 2 - 2.6}
+                                      width={Math.max(10, label.length * 2.7)}
+                                      height="5.2"
+                                      rx="1.5"
+                                      fill="#ffffff"
+                                      fillOpacity="0.9"
+                                    />
+                                    <text
+                                      x={(sx + tx) / 2}
+                                      y={(sy + ty) / 2 + 1.1}
+                                      textAnchor="middle"
+                                      fontSize="2.35"
+                                      fill="#1e3a8a"
+                                      fontWeight="700"
+                                    >
+                                      {label}
+                                    </text>
+                                  </g>
+                                )}
+                              </g>
+                            );
+                          })}
                           {communityPreviewGraph.nodes.map((node: any, index: number) => {
                             const color = node.communityId !== undefined
                               ? COMMUNITY_PALETTE[node.communityId % COMMUNITY_PALETTE.length]
                               : NODE_TYPE_COLORS[node.type] || '#64748b';
-                            const showLabel = hoveredCommunityNodeId === node.id || draggingCommunityNodeId === node.id;
-                            const label = node.name.length > 14 ? `${node.name.slice(0, 13)}...` : node.name;
-                            const labelWidth = Math.max(18, Math.min(46, label.length * 3.1 + 6));
-                            const labelX = Math.min(96 - labelWidth, Math.max(4, node.x + 2.8));
-                            const labelY = Math.max(6, node.y - 6.2);
+                            const nodeFill = node.type === 'EVENT' || node.type === 'RiskFeature'
+                              ? '#fee2e2'
+                              : node.type === 'PERSON'
+                                ? '#ede9fe'
+                                : '#bfdbfe';
+                            const isActiveNode = hoveredCommunityNodeId === node.id || draggingCommunityNodeId === node.id;
+                            const showLabel = isActiveNode;
+                            const fullLabel = node.name.length > 18 ? `${node.name.slice(0, 17)}...` : node.name;
+                            const label = fullLabel;
+                            const labelWidth = Math.max(20, Math.min(54, label.length * 3.0 + 7));
+                            const labelX = Math.min(96 - labelWidth, Math.max(4, node.x - labelWidth / 2));
+                            const labelY = Math.max(6, Math.min(93, node.y + node.radius + 2.5));
                             return (
                               <g
                                 key={`${node.id}-${index}`}
@@ -1034,22 +1375,29 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                                   <circle
                                     cx={node.x}
                                     cy={node.y}
-                                    r="2.7"
+                                    r={node.radius + 1.05}
                                     fill="none"
                                     stroke="#f59e0b"
-                                    strokeWidth="1"
+                                    strokeWidth="1.15"
                                     vectorEffect="non-scaling-stroke"
                                   />
                                 )}
                                 <circle
                                   cx={node.x}
                                   cy={node.y}
-                                  r={node.isSeed ? 1.85 : 1.45}
-                                  fill={color}
-                                  stroke="#ffffff"
-                                  strokeWidth="0.7"
+                                  r={node.radius}
+                                  fill={nodeFill}
+                                  stroke={color}
+                                  strokeWidth={node.isSeed ? 1.25 : 1.05}
                                   filter="url(#communityNodeShadow)"
                                   vectorEffect="non-scaling-stroke"
+                                />
+                                <circle
+                                  cx={node.x}
+                                  cy={node.y}
+                                  r={Math.max(0.8, node.radius * 0.32)}
+                                  fill={color}
+                                  opacity="0.95"
                                 />
                                 {showLabel && (
                                   <g style={{ pointerEvents: 'none' }}>
@@ -1060,15 +1408,18 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                                       height="7.2"
                                       rx="1.8"
                                       fill="#ffffff"
+                                      fillOpacity="0.94"
                                       stroke={`${color}55`}
                                       strokeWidth="0.45"
                                       vectorEffect="non-scaling-stroke"
                                     />
                                     <text
-                                      x={labelX + 3}
+                                      x={labelX + labelWidth / 2}
                                       y={labelY + 4.9}
+                                      textAnchor="middle"
                                       fontSize="2.65"
-                                      fill="#334155"
+                                      fill="#0f172a"
+                                      fontWeight={node.isSeed ? '700' : '600'}
                                     >
                                       {label}
                                     </text>
@@ -1077,6 +1428,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                               </g>
                             );
                           })}
+                          </g>
                         </svg>
                       ) : (
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1092,7 +1444,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                         </span>
                       )}
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        节点可拖拽调整位置，悬浮显示名称；大规模子图默认抽样展示，避免成员列表刷屏。
+                        拖拽空白处移动画布，滚轮缩放；节点名称默认收起，悬浮显示完整名称。
                       </Text>
                     </div>
                   </div>
@@ -1123,130 +1475,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                     </Space>
                   }
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-                    <Space size={0} style={{ padding: 2, borderRadius: 8, background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
-                      <Button
-                        size="small"
-                        type={riskPathMode === 'community' ? 'primary' : 'text'}
-                        icon={<ClusterOutlined />}
-                        onClick={() => setRiskPathMode('community')}
-                        style={{ borderRadius: 6, fontSize: 12 }}
-                      >
-                        群体间传导
-                      </Button>
-                      <Button
-                        size="small"
-                        type={riskPathMode === 'node' ? 'primary' : 'text'}
-                        icon={<NodeIndexOutlined />}
-                        onClick={() => setRiskPathMode('node')}
-                        style={{ borderRadius: 6, fontSize: 12 }}
-                      >
-                        具体节点路径
-                      </Button>
-                    </Space>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      群体视图看社区之间的风险扩散，节点视图看每条路径的实体链路
-                    </Text>
-                  </div>
-
-                  {riskPathMode === 'community' ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 12 }}>
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, background: '#ffffff', overflow: 'hidden' }}>
-                        <div style={{ padding: '10px 12px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                          <Text strong style={{ fontSize: 13 }}>群体社区之间的关系</Text>
-                          <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
-                            {riskTransmissionGraph.nodes.length} 个群体 / {riskTransmissionGraph.edges.length} 条传导关系
-                          </Text>
-                        </div>
-                        <div style={{ height: 260, position: 'relative' }}>
-                          {riskTransmissionGraph.nodes.length > 0 ? (
-                            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
-                              <defs>
-                                <marker id="riskArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
-                                  <path d="M0,0 L8,4 L0,8 Z" fill="#64748b" />
-                                </marker>
-                              </defs>
-                              {riskTransmissionGraph.edges.map((edge: any, index: number) => {
-                                const source = riskTransmissionGraph.nodes.find((node) => node.id === edge.source);
-                                const target = riskTransmissionGraph.nodes.find((node) => node.id === edge.target);
-                                if (!source || !target) return null;
-                                return (
-                                  <line
-                                    key={`${edge.source}-${edge.target}-${index}`}
-                                    x1={source.x}
-                                    y1={source.y}
-                                    x2={target.x}
-                                    y2={target.y}
-                                    stroke={RISK_LEVEL_COLORS[edge.level] || '#64748b'}
-                                    strokeWidth={Math.min(2.8, 0.8 + edge.count * 0.45)}
-                                    strokeOpacity="0.72"
-                                    markerEnd="url(#riskArrow)"
-                                    vectorEffect="non-scaling-stroke"
-                                  >
-                                    <title>{`${source.label} → ${target.label} / ${edge.count} 条路径`}</title>
-                                  </line>
-                                );
-                              })}
-                              {riskTransmissionGraph.nodes.map((node) => {
-                                const color = COMMUNITY_PALETTE[node.id % COMMUNITY_PALETTE.length];
-                                const nodeRiskColor = node.highCount > 0 ? RISK_LEVEL_COLORS.high : node.mediumCount > 0 ? RISK_LEVEL_COLORS.medium : color;
-                                return (
-                                  <g key={node.id}>
-                                    <title>{`${node.label} / ${node.size} 成员 / ${node.pathCount} 条路径`}</title>
-                                    <circle cx={node.x} cy={node.y} r="8.5" fill={`${color}18`} stroke={nodeRiskColor} strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
-                                    <circle cx={node.x} cy={node.y} r="3.2" fill={color} stroke="#ffffff" strokeWidth="0.8" vectorEffect="non-scaling-stroke" />
-                                    <text x={node.x} y={node.y + 13} textAnchor="middle" fontSize="3.1" fill="#334155" stroke="#ffffff" strokeWidth="0.65" paintOrder="stroke">
-                                      {node.label}
-                                    </text>
-                                    <text x={node.x} y={node.y + 17} textAnchor="middle" fontSize="2.4" fill="#64748b" stroke="#ffffff" strokeWidth="0.5" paintOrder="stroke">
-                                      {node.size} 成员
-                                    </text>
-                                  </g>
-                                );
-                              })}
-                            </svg>
-                          ) : (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>暂无可映射的群体传导关系</Text>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {riskTransmissionGraph.pathRows.slice(0, showAllPaths ? riskTransmissionGraph.pathRows.length : 5).map(({ path, communitySequence }) => (
-                          <div key={path.path_id} style={{ padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-                              <Tag color={RISK_LEVEL_COLORS[path.risk_level]} style={{ fontSize: 10, borderRadius: 4, margin: 0 }}>
-                                {path.risk_level === 'high' ? '高风险' : path.risk_level === 'medium' ? '中风险' : '低风险'}
-                              </Tag>
-                              <Text strong style={{ fontSize: 12 }}>{path.path_id}</Text>
-                              {path.confidence !== undefined && (
-                                <Tag style={{ fontSize: 10, borderRadius: 4, margin: 0 }}>{(path.confidence * 100).toFixed(0)}%</Tag>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                              {communitySequence.length > 0 ? communitySequence.map((cid, idx) => {
-                                const color = COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length];
-                                return (
-                                  <React.Fragment key={`${path.path_id}-${cid}-${idx}`}>
-                                    {idx > 0 && <span style={{ color: '#94a3b8', fontSize: 11 }}>→</span>}
-                                    <Tag style={{ margin: 0, borderRadius: 6, fontSize: 11, color, background: `${color}10`, border: `1px solid ${color}40` }}>
-                                      群体 #{cid}
-                                    </Tag>
-                                  </React.Fragment>
-                                );
-                              }) : (
-                                <Text type="secondary" style={{ fontSize: 11 }}>该路径暂未映射到群体</Text>
-                              )}
-                            </div>
-                            <Text style={{ fontSize: 12, color: '#475569' }}>{path.path_description}</Text>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {displayedPaths.map((path) => (
                         <div
                           key={path.path_id}
@@ -1279,6 +1508,26 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                               </Button>
                             )}
                           </div>
+                          {((path as any).community_path?.length > 0) && (
+                            <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                              <Text type="secondary" style={{ fontSize: 10 }}>社区路径:</Text>
+                              {(path as any).community_path.map((cid: number, idx: number, arr: number[]) => (
+                                <React.Fragment key={cid}>
+                                  <Tag
+                                    style={{
+                                      margin: 0, borderRadius: 4, fontSize: 10, lineHeight: '16px',
+                                      background: `${COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length]}16`,
+                                      border: `1px solid ${COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length]}50`,
+                                      color: COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length],
+                                    }}
+                                  >
+                                    社区 #{cid}
+                                  </Tag>
+                                  {idx < arr.length - 1 && <span style={{ color: '#94a3b8', fontSize: 12 }}>→</span>}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          )}
                           <Text style={{ fontSize: 12, color: '#475569' }}>{path.path_description}</Text>
                           {path.affected_entities && path.affected_entities.length > 0 && (
                             <div style={{ marginTop: 8, overflowX: 'auto', paddingBottom: 4 }}>
@@ -1313,8 +1562,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                           )}
                         </div>
                       ))}
-                    </div>
-                  )}
+                  </div>
                   {sortedPaths.length > 5 && (
                     <Button
                       type="link"
@@ -1337,9 +1585,22 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                     </span>
                   }
                 >
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {isLoading ? '风险路径分析进行中...' : '未检测到风险传导路径'}
-                  </Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {isLoading ? '风险路径分析进行中...' : isInsufficientEvidence ? '图谱证据不足，暂未形成稳定风险传导路径。' : '未检测到风险传导路径。'}
+                    </Text>
+                    {(riskSubjects.length > 0 || hasCommunityResult) && (
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fff7e6', border: '1px solid #ffd591' }}>
+                        <Text strong style={{ fontSize: 12, color: '#ad6800' }}>
+                          已保留部分分析结果
+                        </Text>
+                        <Text style={{ display: 'block', marginTop: 4, fontSize: 12, color: '#8c6d1f' }}>
+                          当前已识别 {riskSubjects.length || totalEntities} 个风险主体
+                          {hasCommunityResult ? '，并完成群体/子图预览' : ''}。建议确认主体别名、补齐关联关系后重新生成路径。
+                        </Text>
+                      </div>
+                    )}
+                  </div>
                 </Card>
               )}
             </div>
@@ -1384,7 +1645,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                       ellipsis={{ rows: 4, expandable: true }}
                       style={{ color: '#475569', fontSize: 13, marginBottom: 0 }}
                     >
-                      {report.executive_summary}
+                      {report.executive_summary || fallbackExecutiveSummary}
                     </Paragraph>
                   </div>
                 </div>
@@ -1393,7 +1654,17 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                   <div className="markdown-report" style={{ fontSize: 13, lineHeight: 1.75, color: '#334155', marginTop: 12, padding: '14px 16px', background: '#f8fafc', borderRadius: 8 }}>
                     <ReactMarkdown>{report.integrated_report || report.markdown_report}</ReactMarkdown>
                   </div>
-                ) : null}
+                ) : (
+                  <div style={{ fontSize: 13, lineHeight: 1.75, color: '#334155', marginTop: 12, padding: '14px 16px', background: '#f8fafc', borderRadius: 8, border: '1px dashed #cbd5e1' }}>
+                    <Text strong style={{ display: 'block', marginBottom: 6 }}>报告正文尚未完整生成</Text>
+                    <Text style={{ display: 'block', color: '#64748b' }}>
+                      系统已展示当前可确认的主体、群体和部分风险证据。{partialMissingItems.length > 0 ? `待补充模块：${partialMissingItems.join('、')}。` : ''}
+                    </Text>
+                    <Text style={{ display: 'block', color: '#64748b', marginTop: 4 }}>
+                      可先确认实体别名、补齐关联公司关系和监管/资金往来证据，再重新生成完整社区风险报告。
+                    </Text>
+                  </div>
+                )}
 
                 {governancePlan?.actions && governancePlan.actions.length > 0 && (
                   <div style={{ marginTop: 12 }}>

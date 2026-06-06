@@ -4,7 +4,7 @@ import { SendOutlined, ClearOutlined, UploadOutlined, FileTextOutlined, CloseOut
 import { EntityMessageBubble } from './EntityMessageBubble'
 import { RiskEntityCard } from './RiskEntityCard'
 import { ContextTagBar, ContextEntity } from './ContextTagBar'
-import type { ChatMessage, RecommendationItem } from '../types/api'
+import type { ChatMessage, EntityCandidate, RecommendationItem } from '../types/api'
 import { useAgentStore } from '../store/agentStore'
 import { DESIGN_TOKENS } from '../styles/constants'
 
@@ -22,6 +22,7 @@ interface WorkspaceContainerProps {
   highlightedEntity?: string | null
   graphInjectedEntity?: { id: string; name: string; type: string } | null
   onClearGraphInject?: () => void
+  contextInjectedEntity?: { id: string; name: string; type: string; nonce?: number } | null
 }
 
 export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
@@ -35,6 +36,7 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
   highlightedEntity,
   graphInjectedEntity,
   onClearGraphInject,
+  contextInjectedEntity,
 }) => {
   const [input, setInput] = useState('')
   const [contextTags, setContextTags] = useState<ContextEntity[]>([])
@@ -46,7 +48,26 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
   const fileUploading = useAgentStore((s) => s.fileUploading)
   const uploadFile = useAgentStore((s) => s.uploadFile)
   const clearUploadedFile = useAgentStore((s) => s.clearUploadedFile)
+  const confirmEntityCandidate = useAgentStore((s) => s.confirmEntityCandidate)
   const storeError = useAgentStore((s) => s.error)
+
+  useEffect(() => {
+    if (!contextInjectedEntity) return
+    setContextTags((prev) => {
+      if (prev.find((t) => t.id === contextInjectedEntity.id || t.label === contextInjectedEntity.name)) {
+        return prev
+      }
+      return [
+        ...prev,
+        {
+          id: contextInjectedEntity.id,
+          label: contextInjectedEntity.name,
+          type: contextInjectedEntity.type,
+        },
+      ]
+    })
+    inputRef.current?.focus()
+  }, [contextInjectedEntity])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -65,7 +86,7 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
       fullQuery = `[${graphInjectedEntity.name}] ${fullQuery}`
     }
     if (contextTags.length > 0) {
-      fullQuery = `Context: ${contextTags.map(t => t.id).join(', ')}. Query: ${fullQuery}`
+      fullQuery = `Context: ${contextTags.map(t => t.label || t.id).join(', ')}. Query: ${fullQuery}`
     }
     try {
       await onSendMessage(fullQuery)
@@ -190,6 +211,50 @@ export const WorkspaceContainer: React.FC<WorkspaceContainerProps> = ({
                   }}
                   highlightedEntity={highlightedEntity}
                 />
+                {msg.role === 'assistant' && msg.data?.entityCandidates && (
+                  <div style={{ marginLeft: 44, marginBottom: 12 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        padding: 10,
+                        background: '#fff',
+                        border: '1px solid #dbeafe',
+                        borderRadius: 8,
+                        boxShadow: '0 6px 16px rgba(15, 23, 42, 0.06)',
+                        maxHeight: 260,
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {msg.data.entityCandidates.candidates.map((candidate: EntityCandidate, index: number) => (
+                        <Button
+                          key={`${candidate.kg_node_id || candidate.canonical_name}-${index}`}
+                          size="small"
+                          style={{
+                            height: 'auto',
+                            minHeight: 32,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            width: '100%',
+                            whiteSpace: 'normal',
+                            textAlign: 'left',
+                          }}
+                          onClick={() => {
+                            const payload = msg.data?.entityCandidates
+                            if (!payload) return
+                            confirmEntityCandidate(payload.alias, candidate, payload.originalQuery)
+                          }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{candidate.canonical_name}</span>
+                          <span style={{ marginLeft: 8, color: '#64748b', fontSize: 12 }}>
+                            {candidate.entity_type === 'PERSON' ? '人物' : '企业'} · {Math.round((candidate.confidence || 0) * 100)}%
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {msg.role === 'assistant' && (msg.data?.output || pendingRecommendations) && (
                   <div style={{ marginLeft: 44, marginBottom: 12 }}>
                     {pendingRecommendations && pendingRecommendations.length > 0 ? (

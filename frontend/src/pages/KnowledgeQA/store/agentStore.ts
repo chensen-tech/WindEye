@@ -14,10 +14,13 @@ import type {
   RiskScores,
   GovernancePlan,
   ComplianceIndicator,
+  EntityCandidate,
+  ExpandedCommunityResult,
 } from '../types/api'
-import { sendUnifiedStream } from '../api/agent'
+import { saveEntityAlias, searchEntityCandidates, sendUnifiedStream } from '../api/agent'
 
 const generateSessionId = () => `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+const ENTITY_ALIAS_STORAGE_KEY = 'windeye.entityAliases.v1'
 
 // Normalize nodes from Neo4j format {id, labels, properties} to frontend format {id, type, ...}
 // Also handles DRAEngine format {id, label, type} which already has a `type` field.
@@ -144,13 +147,27 @@ const BACKEND_STAGE_TO_FRONTEND: Record<string, RiskStage['stage']> = {
   community_detection: 'community',
   risk_analysis: 'analyzing',
   compliance: 'compliance',
-  scoring: 'analyzing',
-  governance: 'analyzing',
+  scoring: 'compliance',
+  governance: 'reporting',
   reporting: 'reporting',
+  done: 'reporting',
 }
 
 function mapBackendStage(backendStage: string): RiskStage['stage'] {
   return BACKEND_STAGE_TO_FRONTEND[backendStage] || 'retrieving'
+}
+
+function appendRiskProgress(
+  stages: RiskStage[],
+  stage: RiskStage['stage'],
+  content: string,
+): RiskStage[] {
+  const next = { stage, content }
+  const latest = stages[stages.length - 1]
+  if (latest?.stage === next.stage && latest?.content === next.content) {
+    return stages
+  }
+  return [...stages, next]
 }
 
 function mergeRiskReport(prev: RiskReport | null, patch: Partial<RiskReport>): RiskReport {
@@ -276,8 +293,131 @@ function extractAmbiguousShortMention(query: string): string | null {
   return stopWords.has(mention) ? null : mention
 }
 
-function buildClarifyAnswer(mention: string): string {
-  return `你说的“${mention}”可能是公司简称，图谱里可能存在多个相近实体。为了避免把主体识别错，请补充一个更明确的名称，例如公司全称、地区，或直接输入类似“${mention}投资管理有限公司”。`
+function getMentionNodeName(node: any): string {
+  const props = node?.properties || {}
+  return String(
+    node?.name
+    || node?.title
+    || node?.label
+    || props.name
+    || props.COMPANY_NM
+    || props.PERSON_NM
+    || props.title
+    || ''
+  ).trim()
+}
+
+function getMentionNodeType(node: any): string {
+  const props = node?.properties || {}
+  return String(node?.type || node?.entityType || node?.entity_type || props.type || node?.labels?.[0] || '').toUpperCase()
+}
+
+function looksLikeCompanyName(name: string, type?: string): boolean {
+  if (['EVENT', 'SUB_EVENT', 'RISKFEATURE', 'RISKFACTOR', 'REGULATION', 'LAW'].includes(type || '')) {
+    return false
+  }
+  if (/事件|案件|诉讼|处罚|仲裁|纠纷|争议|违约|违规|违法|资金占用|冻结|判决|裁定|非法集资/.test(name)) {
+    return false
+  }
+  return type === 'COMPANY' || type === 'SUBJECT' || /公司|集团|有限|股份|控股|金融服务|证券|银行|基金|资本/.test(name)
+}
+
+function resolveShortMentionFromCurrentGraph(
+  mention: string,
+  subgraph: Subgraph | null,
+): { resolvedName?: string; candidates: string[] } {
+  const nodes = subgraph?.nodes || []
+  const matched = nodes
+    .map((node: any) => {
+      const name = getMentionNodeName(node)
+      const type = getMentionNodeType(node)
+      return { name, type }
+    })
+    .filter((item) => item.name && item.name !== mention && item.name.includes(mention))
+
+  const unique = Array.from(
+    new Map(matched.map((item) => [item.name, item])).values(),
+  )
+  const companyMatches = unique.filter((item) => looksLikeCompanyName(item.name, item.type))
+  const preferred = companyMatches.length > 0 ? companyMatches : unique
+
+  if (preferred.length === 1) {
+    return { resolvedName: preferred[0].name, candidates: preferred.map((item) => item.name) }
+  }
+  return { candidates: preferred.slice(0, 6).map((item) => item.name) }
+}
+
+function readConfirmedAlias(alias: string): string | null {
+  try {
+    const raw = localStorage.getItem(ENTITY_ALIAS_STORAGE_KEY)
+    const aliases = raw ? JSON.parse(raw) : {}
+    const item = aliases?.[alias]
+    return typeof item?.canonicalName === 'string' ? item.canonicalName : null
+  } catch {
+    return null
+  }
+}
+
+function writeConfirmedAlias(alias: string, candidate: EntityCandidate) {
+  try {
+    const raw = localStorage.getItem(ENTITY_ALIAS_STORAGE_KEY)
+    const aliases = raw ? JSON.parse(raw) : {}
+    aliases[alias] = {
+      canonicalName: candidate.canonical_name,
+      kgNodeId: candidate.kg_node_id,
+      entityType: candidate.entity_type,
+      updatedAt: new Date().toISOString(),
+    }
+    localStorage.setItem(ENTITY_ALIAS_STORAGE_KEY, JSON.stringify(aliases))
+  } catch {
+    // Local cache is only an acceleration path; backend alias persistence is primary.
+  }
+}
+
+function toLocalEntityCandidate(alias: string, name: string, index: number): EntityCandidate {
+  return {
+    raw: alias,
+    canonical_name: name,
+    kg_node_id: `local-${index}-${name}`,
+    entity_type: 'COMPANY',
+    labels: ['Subject'],
+    match_type: 'local_graph',
+    match_score: 0.72,
+    confidence: 0.68,
+    reason: '当前图谱主体匹配',
+  }
+}
+
+function mergeEntityCandidates(
+  alias: string,
+  remote: EntityCandidate[],
+  localNames: string[],
+): EntityCandidate[] {
+  const merged = new Map<string, EntityCandidate>()
+  remote.forEach((item) => {
+    if (item?.canonical_name) merged.set(item.canonical_name, item)
+  })
+  localNames.forEach((name, index) => {
+    if (name && !merged.has(name)) {
+      merged.set(name, toLocalEntityCandidate(alias, name, index))
+    }
+  })
+  return [...merged.values()]
+    .filter((item) => item.entity_type?.toUpperCase() !== 'EVENT')
+    .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+    .slice(0, 30)
+}
+
+function buildClarifyAnswer(mention: string, candidates: string[] = []): string {
+  if (candidates.length > 0) {
+    return `你说的“${mention}”可能对应多个图谱实体，请再明确一下主体：\n${candidates.map((item, index) => `${index + 1}. ${item}`).join('\n')}`
+  }
+  return `你说的“${mention}”可能是公司简称。为了避免把主体识别错，请补充一个更明确的名称，例如公司全称、地区，或直接输入类似“${mention}投资管理有限公司”。`
+}
+
+function buildCandidateConfirmAnswer(mention: string, candidates: EntityCandidate[]): string {
+  const names = candidates.map((item, index) => `${index + 1}. ${item.canonical_name}`).join('\n')
+  return `你说的“${mention}”可能对应多个主体。请选择一个确认；确认后会把“${mention}”保存为该主体的别名，后续可直接用简称查询。\n${names}`
 }
 
 function buildReportAnswer(report: RiskReport): string {
@@ -332,7 +472,7 @@ function buildReportAnswer(report: RiskReport): string {
 }
 
 type RouteDecision = 'graph' | 'clarify' | 'risk'
-type RightPanelMode = 'graph' | 'risk' | 'compliance'
+type RightPanelMode = 'graph' | 'risk' | 'compliance' | 'community_graph'
 
 export interface AgentTraceEntry {
   agent: string
@@ -377,6 +517,11 @@ interface AgentStore {
   complianceScores: Record<string, number> | null
   complianceIndicators: ComplianceIndicator[] | null
 
+  // Expanded community state (two-level zoom)
+  expandedCommunityResult: ExpandedCommunityResult | null
+  expandedCommunityId: number | null
+  selectedRiskPathId: string | null
+
   // File upload state
   uploadedFile: UploadedFileInfo | null
   fileUploading: boolean
@@ -388,6 +533,7 @@ interface AgentStore {
   sendMessage: (query: string, rewrittenQuery?: string) => Promise<void>
   sendRiskQuery: (query: string, communityId?: number) => Promise<void>
   sendUnifiedMessage: (query: string, intentHint?: string) => Promise<void>
+  confirmEntityCandidate: (alias: string, candidate: EntityCandidate, originalQuery: string) => Promise<void>
   retryRiskQuery: () => Promise<void>
   uploadFile: (file: File) => Promise<void>
   clearUploadedFile: () => void
@@ -422,6 +568,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   complianceScores: null,
   complianceIndicators: null,
 
+  expandedCommunityResult: null,
+  expandedCommunityId: null,
+  selectedRiskPathId: null,
+
   uploadedFile: null,
   fileUploading: false,
   agentTraces: [],
@@ -440,12 +590,92 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   sendUnifiedMessage: async (query: string, intentHint?: string) => {
     if (get().isLoading) return
 
+    const originalQuery = query
     const ambiguousMention = !intentHint ? extractAmbiguousShortMention(query) : null
     if (ambiguousMention) {
+      const confirmedAlias = readConfirmedAlias(ambiguousMention)
+      if (confirmedAlias) {
+        query = query.replace(ambiguousMention, confirmedAlias)
+      }
+      const resolved = resolveShortMentionFromCurrentGraph(ambiguousMention, get().currentSubgraph)
+      if (confirmedAlias) {
+        // The query has already been rewritten from the confirmed alias cache.
+      } else {
+        let remoteCandidates: EntityCandidate[] = []
+        try {
+          remoteCandidates = await searchEntityCandidates(ambiguousMention, 'COMPANY', 30)
+        } catch (err) {
+          console.warn('[agentStore] entity candidate search failed:', err)
+        }
+        const candidates = mergeEntityCandidates(ambiguousMention, remoteCandidates, resolved.candidates)
+        if (candidates.length === 1 && candidates[0].match_score >= 0.88) {
+          query = query.replace(ambiguousMention, candidates[0].canonical_name)
+        } else if (candidates.length > 1) {
+          const userMsg: ChatMessage = {
+            id: `user_${Date.now()}`,
+            role: 'user',
+            content: originalQuery,
+            timestamp: Date.now(),
+          }
+          const assistantContent = buildCandidateConfirmAnswer(ambiguousMention, candidates)
+          const assistantMsg: ChatMessage = {
+            id: `asst_${Date.now()}`,
+            role: 'assistant',
+            content: assistantContent,
+            timestamp: Date.now(),
+            isLoading: false,
+            data: {
+              entityCandidates: {
+                alias: ambiguousMention,
+                originalQuery,
+                candidates,
+              },
+            },
+          }
+          set((state) => ({
+            messages: [...state.messages, userMsg, assistantMsg],
+            currentRoute: 'graph',
+            activeRightPanel: 'graph',
+            clarifyMessage: assistantContent,
+          }))
+          return
+        } else if (resolved.resolvedName) {
+          query = query.replace(ambiguousMention, resolved.resolvedName)
+        }
+      }
+
+      if (!confirmedAlias && query === originalQuery && resolved.candidates.length > 1) {
+        const userMsg: ChatMessage = {
+          id: `user_${Date.now()}`,
+          role: 'user',
+          content: originalQuery,
+          timestamp: Date.now(),
+        }
+        const assistantMsg: ChatMessage = {
+          id: `asst_${Date.now()}`,
+          role: 'assistant',
+          content: buildClarifyAnswer(ambiguousMention, resolved.candidates),
+          timestamp: Date.now(),
+          isLoading: false,
+        }
+        set((state) => ({
+          messages: [...state.messages, userMsg, assistantMsg],
+          currentRoute: 'graph',
+          activeRightPanel: 'graph',
+          clarifyMessage: assistantMsg.content,
+        }))
+        return
+      }
+    }
+
+    if (ambiguousMention && query === originalQuery && !get().currentSubgraph?.nodes?.length) {
+      // No local graph evidence is available yet. Let the backend resolver search
+      // the KG instead of blocking the user with a hard-coded clarification.
+    } else if (ambiguousMention && query === originalQuery) {
       const userMsg: ChatMessage = {
         id: `user_${Date.now()}`,
         role: 'user',
-        content: query,
+        content: originalQuery,
         timestamp: Date.now(),
       }
       const assistantMsg: ChatMessage = {
@@ -472,7 +702,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         '洗钱', '欺诈', '违约', '评级', '预警',
         '治理报告', '社区报告', '社区风险', '群体风险', '风险报告', '协同治理',
       ]
-      if (riskKeywords.some((kw) => query.includes(kw))) {
+      const fileAnalysisKeywords = ['该文件', '上传文件', '文件中', '这个文件', '该文档', '上传文档', '这个文档']
+      if (
+        riskKeywords.some((kw) => query.includes(kw))
+        || (get().uploadedFile && fileAnalysisKeywords.some((kw) => query.includes(kw)))
+      ) {
         intentHint = 'risk_analysis'
       }
     }
@@ -486,7 +720,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     const userMsg: ChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
-      content: query,
+      content: originalQuery,
       timestamp: Date.now(),
     }
 
@@ -515,6 +749,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       riskEntityCommunityMap: null,
       complianceScores: null,
       complianceIndicators: null,
+      expandedCommunityResult: null,
+      expandedCommunityId: null,
+      selectedRiskPathId: null,
       currentRoute: expectsRiskReport ? 'risk' : 'graph',
       activeRightPanel: expectsRiskReport ? 'risk' : 'graph',
     }))
@@ -534,7 +771,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           const stageAction = data.data?.agent_action || ''
           const frontendStage = mapBackendStage(data.stage || _stage)
           set((state) => ({
-            riskStages: [...state.riskStages, { stage: frontendStage, content: stageAction || stageName }],
+            riskStages: appendRiskProgress(state.riskStages, frontendStage, stageAction || stageName),
             messages: state.messages.map((m) =>
               m.id === tempId
                 ? { ...m, thinkingStatus: stageAction || stageName }
@@ -545,7 +782,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
         onEntities: (data) => {
           const resolved = data.resolved || []
-          set({ resolvedEntities: resolved })
+          set((state) => ({
+            resolvedEntities: resolved,
+            riskStages: appendRiskProgress(state.riskStages, 'planning', `实体对齐完成：${resolved.length} 个主体`),
+          }))
         },
 
         onSubgraph: (graph) => {
@@ -571,20 +811,30 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           if (invalid.length > 0) {
             console.warn('[agentStore] onSubgraph WARNING: nodes with invalid type after normalization:', invalid.map((n: any) => ({ id: n.id, title: n.title, type: n.type, entityType: n.entityType, entity_type: n.entity_type })))
           }
-          set({ currentSubgraph: normalized as Subgraph })
+          set((state) => ({
+            currentSubgraph: normalized as Subgraph,
+            riskStages: appendRiskProgress(
+              state.riskStages,
+              'retrieving',
+              `证据子图完成：${normalized.nodes.length} 个节点、${normalized.edges.length} 条关系`,
+            ),
+          }))
         },
 
         onEntityStats: (stats) => {
           set((state) => ({
             riskReport: mergeRiskReport(state.riskReport, { entity_stats: stats } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'entity_stats', '实体统计完成，准备群体发现'),
           }))
         },
 
         onCommunity: (info) => {
           console.log('[agentStore] onCommunity:', { communityCount: (info as any)?.communities?.length, method: (info as any)?.selected_method })
+          const communityCount = Array.isArray((info as any)?.communities) ? (info as any).communities.length : 0
           set((state) => ({
             riskCommunity: info as CommunityResult,
             riskReport: mergeRiskReport(state.riskReport, { community_info: info } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'community', `群体发现完成：${communityCount} 个群体`),
           }))
         },
 
@@ -592,6 +842,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           console.log('[agentStore] onEntityCommunityMap:', { entityCount: (map as any)?.entities?.length, unmapped: (map as any)?.unmapped_count })
           set((state) => ({
             riskEntityCommunityMap: map as EntityCommunityMap,
+            riskStages: appendRiskProgress(state.riskStages, 'community', '实体-群体映射完成'),
           }))
         },
 
@@ -618,6 +869,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               currentSubgraph: state.currentSubgraph
                 ? { ...state.currentSubgraph, paths: mergedPaths }
                 : null,
+              riskStages: appendRiskProgress(state.riskStages, 'analyzing', `候选风险路径完成：${arr.length} 条`),
             }
           })
         },
@@ -637,6 +889,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             riskReport: mergeRiskReport(state.riskReport, {
               risk_paths: interpretedArr,
             } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'analyzing', `风险传导路径完成：${interpretedArr.length} 条`),
           }))
 
           // Also merge into currentSubgraph.paths so the graph view can highlight them
@@ -665,31 +918,41 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         },
 
         onAnomalyFindings: (anomalies) => {
+          const anomalyList = Array.isArray(anomalies) ? anomalies : (anomalies as any)?.anomalies ?? []
           set((state) => ({
             riskReport: mergeRiskReport(state.riskReport, {
-              anomaly_findings: Array.isArray(anomalies) ? anomalies : (anomalies as any)?.anomalies ?? [],
+              anomaly_findings: anomalyList,
             } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'analyzing', `异常关系识别完成：${anomalyList.length} 条`),
           }))
         },
 
         onCompliance: (matches) => {
+          const complianceMatches = Array.isArray(matches) ? matches : (matches as any)?.matches ?? []
           set((state) => ({
             riskReport: mergeRiskReport(state.riskReport, {
-              compliance_matches: Array.isArray(matches) ? matches : (matches as any)?.matches ?? [],
+              compliance_matches: complianceMatches,
             } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'compliance', `合规匹配完成：${complianceMatches.length} 条`),
           }))
         },
 
         onComplianceScores: (scores) => {
           const scoreMap = scores as Record<string, number>
           console.log('[agentStore] onComplianceScores keys=%d', Object.keys(scoreMap || {}).length)
-          set({ complianceScores: scoreMap })
+          set((state) => ({
+            complianceScores: scoreMap,
+            riskStages: appendRiskProgress(state.riskStages, 'compliance', '合规指标评分完成'),
+          }))
         },
 
         onComplianceIndicators: (data) => {
           const indicators = (data as any)?.indicators || data || []
           console.log('[agentStore] onComplianceIndicators count=%d', Array.isArray(indicators) ? indicators.length : 0)
-          set({ complianceIndicators: Array.isArray(indicators) ? indicators : [] })
+          set((state) => ({
+            complianceIndicators: Array.isArray(indicators) ? indicators : [],
+            riskStages: appendRiskProgress(state.riskStages, 'compliance', '合规指标体系完成'),
+          }))
         },
 
         onScoring: (scores) => {
@@ -699,6 +962,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               risk_scores: scores,
               overall_risk_level: (scores as any)?.level,
             } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'compliance', '风险评分完成，准备治理报告'),
           }))
         },
 
@@ -706,6 +970,27 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           set((state) => ({
             governancePlan: plan as GovernancePlan,
             riskReport: mergeRiskReport(state.riskReport, { governance_plan: plan } as any),
+            riskStages: appendRiskProgress(state.riskStages, 'reporting', '治理决策完成，生成报告中'),
+          }))
+        },
+
+        onExpandedCommunity: (result) => {
+          console.log('[agentStore] onExpandedCommunity:', {
+            method: result.selectedMethod,
+            communities: result.communities?.length,
+            communityGraphNodes: result.communityGraph?.nodes?.length,
+            communityGraphEdges: result.communityGraph?.edges?.length,
+            seedCommunityId: result.seedCommunityId,
+          })
+          set((state) => ({
+            expandedCommunityResult: result,
+            expandedCommunityId: null,
+            selectedRiskPathId: null,
+            riskStages: appendRiskProgress(
+              state.riskStages,
+              'community',
+              `扩展社区发现完成：${result.communities?.length || 0} 个社区，${result.communityGraph?.nodes?.length || 0} 个社区节点`,
+            ),
           }))
         },
 
@@ -724,6 +1009,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         onReport: (report) => {
           set((state) => ({
             riskReport: mergeRiskReport(state.riskReport, report as RiskReport),
+            riskStages: appendRiskProgress(state.riskStages, 'reporting', '协同治理社区报告生成完成'),
             messages: state.messages.map((m) =>
               m.id === tempId
                 ? {
@@ -746,6 +1032,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           const isRisk = finalIntent === 'risk_analysis'
           set((state) => ({
             isLoading: false,
+            riskStages: isRisk
+              ? appendRiskProgress(state.riskStages, 'reporting', '协同治理分析完成')
+              : state.riskStages,
             currentRoute: isRisk ? 'risk' : 'graph',
             activeRightPanel: isRisk ? 'risk' : 'graph',
             messages: state.messages.map((m) =>
@@ -776,6 +1065,45 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     )
   },
 
+  confirmEntityCandidate: async (alias: string, candidate: EntityCandidate, originalQuery: string) => {
+    if (get().isLoading) return
+    const canonicalName = candidate.canonical_name
+    if (!alias || !canonicalName) return
+
+    try {
+      await saveEntityAlias(alias, candidate)
+      writeConfirmedAlias(alias, candidate)
+      const rewrittenQuery = originalQuery.replace(alias, canonicalName)
+      const confirmMsg: ChatMessage = {
+        id: `asst_${Date.now()}`,
+        role: 'assistant',
+        content: `已确认“${alias}”指代“${canonicalName}”，并已保存为别名。正在用完整主体继续查询。`,
+        timestamp: Date.now(),
+        isLoading: false,
+      }
+      set((state) => ({
+        messages: [...state.messages, confirmMsg],
+        clarifyMessage: null,
+      }))
+      await get().sendUnifiedMessage(rewrittenQuery)
+    } catch (err: any) {
+      const msg = err?.message || '实体别名保存失败'
+      set((state) => ({
+        error: msg,
+        messages: [
+          ...state.messages,
+          {
+            id: `asst_${Date.now()}`,
+            role: 'assistant',
+            content: `保存别名失败：${msg}`,
+            timestamp: Date.now(),
+            isLoading: false,
+          },
+        ],
+      }))
+    }
+  },
+
   retryRiskQuery: async () => {
     const { lastRiskQuery } = get()
     if (lastRiskQuery) {
@@ -801,6 +1129,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       riskEntityCommunityMap: null,
       complianceScores: null,
       complianceIndicators: null,
+      expandedCommunityResult: null,
+      expandedCommunityId: null,
+      selectedRiskPathId: null,
       activeRightPanel: 'graph',
       resolvedEntities: [],
       evidenceChains: null,

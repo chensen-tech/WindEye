@@ -161,6 +161,24 @@ export interface StreamReasoningEvent {
   reasoning_log: string
 }
 
+export interface EntityCandidate {
+  raw: string
+  canonical_name: string
+  kg_node_id: string
+  entity_type: string
+  labels: string[]
+  match_type: string
+  match_score: number
+  confidence: number
+  reason?: string
+}
+
+export interface EntityCandidatePrompt {
+  alias: string
+  originalQuery: string
+  candidates: EntityCandidate[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -178,6 +196,7 @@ export interface ChatMessage {
     output?: AgentOutput
     trace?: TraceContext
     echartsConfig?: Record<string, unknown>
+    entityCandidates?: EntityCandidatePrompt
   }
 }
 
@@ -224,6 +243,7 @@ export interface RiskPath {
   affected_entities: string[]
   node_ids?: string[]
   edge_ids?: string[]
+  community_path?: number[]
   path_description: string
   path_text?: string
   confidence?: number
@@ -453,4 +473,59 @@ export interface CommunityInfo {
   community_id?: number
   size?: number
   top_entities?: Array<{ id: string; name: string; label: string }>
+}
+
+// ── Expanded Community (Phase B / community-discovery API) ──
+
+export interface CommunityAggNode {
+  id: string
+  communityId: number
+  label: string
+  size: number
+  riskLevel?: 'high' | 'medium' | 'low'
+  memberCount: number
+  topEntityNames: string[]
+}
+
+export interface CommunityAggEdge {
+  id?: string
+  source: string
+  target: string
+  weight: number
+  riskLevel?: 'high' | 'medium' | 'low'
+  relationTypes: string[]
+}
+
+export interface CommunityGraphData {
+  nodes: CommunityAggNode[]
+  edges: CommunityAggEdge[]
+}
+
+export interface CommunityMemberDetail {
+  id: string
+  name: string
+  type: string
+  communityId: number
+  role: 'core' | 'bridge' | 'member'
+  isSeed: boolean
+  riskLevel?: 'high' | 'medium' | 'low'
+}
+
+export interface ExpandedCommunityResult {
+  seedNodes: Array<{ id: string; name: string; type: string }>
+  communities: CommunityItem[]
+  seedCommunityId: number | null
+  entityCommunityMap: Record<string, CommunityMemberDetail>
+  communityEdges: Array<{
+    sourceCommunityId: number
+    targetCommunityId: number
+    weight: number
+    riskLevel?: string
+    relationTypes: string[]
+    bridgeNodeIds: string[]
+  }>
+  communityGraph: CommunityGraphData
+  selectedMethod: string
+  fallbackReason: string | null
+  visualization?: Record<string, unknown>
 }

@@ -4,6 +4,50 @@ Command failures and integration errors.
 
 ---
 
+## Backend plugin unit tests can fail on import when Neo4j env is missing
+
+### Error
+```text
+RuntimeError: NEO4J_PASSWORD is required for graph retrieval.
+```
+
+### Context
+- Importing `dra_ma.tools.graph_analytics_tools` pulls `dra_ma.tools.__init__`, which imports entity resolver and initializes `Neo4jClient.from_env()`.
+- This can happen even for pure plugin tests that do not actually query Neo4j.
+
+### Suggested Fix
+Set temporary test-only Neo4j environment variables before importing these modules, or refactor package imports to avoid eager database initialization.
+
+### Metadata
+- Reproducible: yes
+- Related Files: `backend/dra_ma/tools/__init__.py`, `backend/core/database.py`
+
+---
+## [ERR-20260604-001] resolver_direct_script_missing_neo4j_env
+
+**Logged**: 2026-06-04T18:30:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend-test
+
+### Summary
+Running `dra_ma.tools.entity_resolver.EntityResolver` directly with ad hoc Python can fail outside the backend service process because Neo4j connection environment variables are not loaded in that shell.
+
+### Error
+```text
+RuntimeError: NEO4J_PASSWORD is required for graph retrieval.
+```
+
+### Context
+- API tests against the running service can pass because the service process already has the required graph database environment.
+- Direct resolver smoke tests should either load the same backend environment or use REST endpoints such as `/api/v1/entities/search` and `/api/v1/entities/aliases`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/dra_ma/tools/entity_resolver.py, backend/api/router.py
+
+---
+
 ## [ERR-20260529-001] portability — hardcoded chromedriver paths
 
 **Logged**: 2026-05-29T10:00:00Z

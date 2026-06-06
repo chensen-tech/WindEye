@@ -226,6 +226,9 @@ class GraphAnalytics:
         method: str = "louvain",
         min_community_size: int = 2,
         path_limit: int = 2000,
+        max_nodes: int = 300,
+        relation_whitelist: list[str] | None = None,
+        community_mode: str = "expanded",
     ) -> dict[str, Any]:
         """Extract a connected seed subgraph and detect local communities.
 
@@ -241,7 +244,13 @@ class GraphAnalytics:
         seed_ids = [str(s).strip() for s in (seed_ids or []) if str(s).strip()]
         max_hop = max(1, min(int(max_hop or 2), 3))
         path_limit = max(50, min(int(path_limit or 2000), 10000))
+        max_nodes = max(10, min(int(max_nodes or 300), 5000))
         min_community_size = max(1, int(min_community_size or 2))
+        relation_whitelist = [
+            str(rel).strip()
+            for rel in (relation_whitelist or [])
+            if str(rel).strip()
+        ]
 
         if not seed_names and not seed_ids:
             return {"success": False, "error": "seed_names or seed_ids is required"}
@@ -257,7 +266,10 @@ class GraphAnalytics:
             }
 
         subgraph = self._extract_seed_connected_subgraph(
-            resolved_seed_ids, max_hop=max_hop, path_limit=path_limit
+            resolved_seed_ids,
+            max_hop=max_hop,
+            path_limit=path_limit,
+            relation_whitelist=relation_whitelist,
         )
         nodes = subgraph.get("nodes", [])
         edges = subgraph.get("edges", [])
@@ -269,36 +281,58 @@ class GraphAnalytics:
             }
 
         connected = self._largest_connected_component(nodes, edges, resolved_seed_ids)
-        communities, modularity = self._detect_local_communities(
+        connected = self._limit_subgraph_nodes(connected, resolved_seed_ids, max_nodes)
+        communities, modularity, selected_method, fallback_reason = self._detect_local_communities(
             connected["nodes"],
             connected["edges"],
             method=method,
             min_community_size=min_community_size,
         )
+        seed_community_id = self._find_seed_community_id(communities, resolved_seed_ids)
+        community_edges = self._build_community_edges(communities, connected.get("edges", []))
+        community_graph = self._build_community_graph(communities, community_edges, seed_community_id)
         entity_map = self._build_entity_community_map(communities)
 
         runtime_ms = round((time.perf_counter() - t0) * 1000)
         return {
             "success": True,
-            "method": method,
+            "method": selected_method,
+            "requested_method": method,
+            "selected_method": selected_method,
+            "fallback_reason": fallback_reason,
             "runtime_ms": runtime_ms,
             "input": {
                 "seed_names": seed_names,
                 "seed_ids": seed_ids,
                 "max_hop": max_hop,
                 "path_limit": path_limit,
+                "max_nodes": max_nodes,
                 "min_community_size": min_community_size,
+                "relation_whitelist": relation_whitelist,
+                "community_mode": community_mode,
             },
             "seed_nodes": seed_nodes,
             "subgraph": subgraph,
             "connected_subgraph": connected,
+            "node_count": len(connected.get("nodes", [])),
+            "edge_count": len(connected.get("edges", [])),
             "communities_count": len(communities),
+            "community_count": len(communities),
             "modularity": round(float(modularity or 0.0), 4),
+            "seed_community_id": seed_community_id,
             "communities": communities,
+            "members": next((c.get("members", []) for c in communities if c.get("community_id") == seed_community_id), []),
+            "core_nodes": next((c.get("core_nodes", []) for c in communities if c.get("community_id") == seed_community_id), []),
+            "bridge_nodes": next((c.get("bridge_nodes", []) for c in communities if c.get("community_id") == seed_community_id), []),
             "entity_community_map": entity_map,
+            "community_edges": community_edges,
+            "community_graph": community_graph,
             "visualization": {
                 "flow": ["seed_nodes", "n_hop_network", "connected_subgraph", "communities"],
+                "default_view": "community_graph",
                 "layout": "community-cluster",
+                "suggested_layout": "clustered_force",
+                "seed_community_id": seed_community_id,
                 "highlight_seed_ids": resolved_seed_ids,
             },
         }
@@ -367,16 +401,19 @@ class GraphAnalytics:
         seed_ids: list[str],
         max_hop: int,
         path_limit: int,
+        relation_whitelist: list[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         from core.database import Neo4jClient
 
+        relation_whitelist = relation_whitelist or []
         try:
             records, _ = self._db.execute_read_with_summary(
                 f"""
                 MATCH (seed)
                 WHERE elementId(seed) IN $seed_ids
                 MATCH path = (seed)-[*1..{max_hop}]-(neighbor)
-                WHERE any(label IN labels(neighbor) WHERE label IN [
+                WHERE ($relation_whitelist = [] OR all(rel IN relationships(path) WHERE type(rel) IN $relation_whitelist))
+                  AND any(label IN labels(neighbor) WHERE label IN [
                     'Subject','Event','Feature','Regulation',
                     'COMPANY','PERSON','PFCOMPANY','PFUND','SECURITY',
                     'TIME','EVENT','REGULATOR',
@@ -397,6 +434,7 @@ class GraphAnalytics:
                 {
                     "seed_ids": seed_ids,
                     "path_limit": path_limit,
+                    "relation_whitelist": relation_whitelist,
                 },
                 timeout_seconds=20.0,
             )
@@ -482,13 +520,57 @@ class GraphAnalytics:
             },
         }
 
+    def _limit_subgraph_nodes(
+        self,
+        subgraph: dict[str, Any],
+        seed_ids: list[str],
+        max_nodes: int,
+    ) -> dict[str, Any]:
+        nodes = subgraph.get("nodes", [])
+        edges = subgraph.get("edges", [])
+        if len(nodes) <= max_nodes:
+            return subgraph
+
+        degree: dict[str, int] = defaultdict(int)
+        for edge in edges:
+            src = str(edge.get("source", ""))
+            tgt = str(edge.get("target", ""))
+            degree[src] += 1
+            degree[tgt] += 1
+
+        seed_set = set(seed_ids)
+        kept_ids = {
+            str(node.get("id", ""))
+            for node in sorted(
+                nodes,
+                key=lambda node: (
+                    str(node.get("id", "")) in seed_set,
+                    degree.get(str(node.get("id", "")), 0),
+                ),
+                reverse=True,
+            )[:max_nodes]
+        }
+        filtered_nodes = [node for node in nodes if str(node.get("id", "")) in kept_ids]
+        filtered_edges = [
+            edge for edge in edges
+            if str(edge.get("source", "")) in kept_ids and str(edge.get("target", "")) in kept_ids
+        ]
+        return {
+            **subgraph,
+            "nodes": filtered_nodes,
+            "edges": filtered_edges,
+            "truncated": True,
+            "original_node_count": len(nodes),
+            "max_nodes": max_nodes,
+        }
+
     def _detect_local_communities(
         self,
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
         method: str,
         min_community_size: int,
-    ) -> tuple[list[dict[str, Any]], float]:
+    ) -> tuple[list[dict[str, Any]], float, str, str | None]:
         graph = nx.Graph()
         node_by_id = {str(n.get("id", "")): n for n in nodes}
         for nid in node_by_id:
@@ -500,18 +582,107 @@ class GraphAnalytics:
                 graph.add_edge(src, tgt, weight=float(edge.get("weight", 1) or 1))
 
         if graph.number_of_nodes() == 0:
-            return [], 0.0
+            return [], 0.0, "wcc", "empty_graph"
 
-        method = (method or "louvain").lower()
-        if graph.number_of_edges() == 0 or method == "wcc":
-            groups = [set(c) for c in nx.connected_components(graph)]
-            modularity = 0.0
-        elif method == "greedy":
-            groups = [set(c) for c in nx.community.greedy_modularity_communities(graph)]
-            modularity = nx.community.modularity(graph, groups) if len(groups) > 1 else 0.0
+        method = (method or "auto").lower()
+        if method == "auto":
+            if self._has_hgt_embeddings(nodes) and graph.number_of_nodes() >= 30:
+                method = "hgt_gkmeans"
+            else:
+                method = "wcc" if graph.number_of_nodes() < 30 else "louvain"
+
+        hgt_fallback_reason: str | None = None
+        if method == "leiden":
+            hgt_fallback_reason = "leiden_local_not_available"
+            method = "louvain"
+        if method == "hgt_gkmeans":
+            try:
+                from kg_query.analytics.community.hgt_gkmeans import HGTGKMeansAlgorithm
+
+                groups, modularity, meta = HGTGKMeansAlgorithm.cluster_subgraph(
+                    nodes,
+                    edges,
+                    min_community_size,
+                )
+                if groups:
+                    logger.info(
+                        "Community detection selected_method=hgt_gkmeans nodes=%s edges=%s embedding_coverage=%s",
+                        graph.number_of_nodes(),
+                        graph.number_of_edges(),
+                        meta.get("embedding_coverage"),
+                    )
+                    communities = self._format_local_communities(
+                        groups,
+                        nodes,
+                        edges,
+                        graph,
+                        min_community_size,
+                    )
+                    return communities, float(modularity), "hgt_gkmeans", None
+                hgt_fallback_reason = str(meta.get("fallback_reason") or "hgt_gkmeans_failed")
+            except Exception as exc:
+                hgt_fallback_reason = f"hgt_gkmeans_failed:{type(exc).__name__}:{exc}"
+            method = "louvain"
+
+        groups, modularity, selected_method, fallback_reason = self._partition_local_graph(graph, method)
+        if hgt_fallback_reason:
+            fallback_reason = (
+                f"{hgt_fallback_reason};{fallback_reason}"
+                if fallback_reason else hgt_fallback_reason
+            )
+        if fallback_reason:
+            logger.warning(
+                "Community detection fallback_reason=%s requested_method=%s selected_method=%s nodes=%s edges=%s",
+                fallback_reason,
+                method,
+                selected_method,
+                graph.number_of_nodes(),
+                graph.number_of_edges(),
+            )
         else:
-            groups = [set(c) for c in nx.community.louvain_communities(graph, seed=42)]
-            modularity = nx.community.modularity(graph, groups) if len(groups) > 1 else 0.0
+            logger.info(
+                "Community detection selected_method=%s nodes=%s edges=%s",
+                selected_method,
+                graph.number_of_nodes(),
+                graph.number_of_edges(),
+            )
+
+        communities = self._format_local_communities(
+            groups,
+            nodes,
+            edges,
+            graph,
+            min_community_size,
+        )
+        return communities, float(modularity), selected_method, fallback_reason
+
+    def _format_local_communities(
+        self,
+        groups: list[set[str]],
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+        graph: nx.Graph,
+        min_community_size: int,
+    ) -> list[dict[str, Any]]:
+        node_by_id = {str(n.get("id", "")): n for n in nodes}
+        community_by_node: dict[str, int] = {}
+        for cid, members in enumerate(sorted(groups, key=len, reverse=True)):
+            for node_id in members:
+                community_by_node[str(node_id)] = cid
+
+        external_degree: dict[str, int] = defaultdict(int)
+        internal_degree: dict[str, int] = defaultdict(int)
+        for edge in edges:
+            src = str(edge.get("source", ""))
+            tgt = str(edge.get("target", ""))
+            if not src or not tgt:
+                continue
+            if community_by_node.get(src) == community_by_node.get(tgt):
+                internal_degree[src] += 1
+                internal_degree[tgt] += 1
+            else:
+                external_degree[src] += 1
+                external_degree[tgt] += 1
 
         communities: list[dict[str, Any]] = []
         for members in sorted(groups, key=len, reverse=True):
@@ -530,63 +701,260 @@ class GraphAnalytics:
                 len(internal_edges) / (len(members) * (len(members) - 1) / 2)
                 if len(members) > 1 else 0.0
             )
-            top_entities = sorted(
-                (
-                    {
-                        "id": node["id"],
-                        "name": self._node_display_name(node),
-                        "label": (node.get("labels") or ["Unknown"])[0],
-                        "degree": graph.degree(node["id"]),
-                    }
-                    for node in member_nodes
-                ),
+            member_items = sorted(
+                [self._community_member_payload(node, graph, internal_degree, external_degree) for node in member_nodes],
                 key=lambda item: item["degree"],
                 reverse=True,
-            )[:10]
+            )
+            top_entities = member_items[:10]
+            core_nodes = member_items[: min(5, max(1, len(member_items) // 5 or 1))]
+            bridge_nodes = [item for item in member_items if item.get("external_degree", 0) > 0][:10]
             communities.append({
                 "community_id": len(communities),
                 "size": len(members),
                 "density": round(float(density), 4),
                 "internal_edges": len(internal_edges),
                 "label_distribution": dict(label_distribution),
+                "members": member_items[:500],
+                "core_nodes": core_nodes,
+                "bridge_nodes": bridge_nodes,
                 "top_entities": top_entities,
                 "member_ids": [node["id"] for node in member_nodes[:500]],
             })
 
-        return communities, float(modularity)
+        return communities
+
+    def _community_member_payload(
+        self,
+        node: dict[str, Any],
+        graph: nx.Graph,
+        internal_degree: dict[str, int],
+        external_degree: dict[str, int],
+    ) -> dict[str, Any]:
+        node_id = str(node.get("id", ""))
+        labels = node.get("labels") or ["Unknown"]
+        degree = int(graph.degree(node_id)) if node_id in graph else 0
+        role = "member"
+        if external_degree.get(node_id, 0) > 0:
+            role = "bridge"
+        if internal_degree.get(node_id, 0) >= max(1, degree - external_degree.get(node_id, 0)):
+            role = "core" if degree >= 2 else role
+        return {
+            "id": node_id,
+            "name": self._node_display_name(node),
+            "type": str(labels[0]),
+            "label": str(labels[0]),
+            "role": role,
+            "degree": degree,
+            "internal_degree": int(internal_degree.get(node_id, 0)),
+            "external_degree": int(external_degree.get(node_id, 0)),
+            "risk_level": str((node.get("properties") or {}).get("risk_level", "") or ""),
+        }
+
+    @staticmethod
+    def _has_hgt_embeddings(nodes: list[dict[str, Any]]) -> bool:
+        embedding_keys = {
+            "hgt_embedding",
+            "hgtEmbedding",
+            "graph_embedding",
+            "graphEmbedding",
+            "aligned_embedding",
+            "alignedEmbedding",
+            "embedding",
+            "vector",
+        }
+        covered = 0
+        for node in nodes:
+            props = node.get("properties") or {}
+            if any(isinstance(node.get(key, props.get(key)), list) for key in embedding_keys):
+                covered += 1
+        return covered >= max(2, int(len(nodes) * 0.6))
+
+    def _partition_local_graph(
+        self,
+        graph: nx.Graph,
+        method: str,
+    ) -> tuple[list[set[str]], float, str, str | None]:
+        fallback_reason: str | None = None
+
+        def wcc(reason: str | None) -> tuple[list[set[str]], float, str, str | None]:
+            groups = [set(c) for c in nx.connected_components(graph)]
+            return groups, 0.0, "wcc", reason
+
+        def modularity(groups: list[set[str]]) -> float:
+            if len(groups) <= 1:
+                return 0.0
+            try:
+                return float(nx.community.modularity(graph, groups, weight="weight"))
+            except Exception as exc:
+                logger.warning("Community modularity calculation failed: %s", exc)
+                return 0.0
+
+        if graph.number_of_edges() == 0:
+            return wcc("no_edges")
+
+        if method == "wcc":
+            return wcc(None)
+
+        if method == "greedy":
+            try:
+                groups = [set(c) for c in nx.community.greedy_modularity_communities(graph, weight="weight")]
+                return groups, modularity(groups), "greedy", None
+            except Exception as exc:
+                return wcc(f"greedy_failed:{type(exc).__name__}:{exc}")
+
+        if method != "louvain":
+            return wcc(f"unsupported_method:{method}")
+
+        if graph.number_of_nodes() < 30:
+            return wcc(f"node_count_lt_30:{graph.number_of_nodes()}")
+
+        try:
+            groups = [set(c) for c in nx.community.louvain_communities(graph, weight="weight", seed=42)]
+            return groups, modularity(groups), "louvain_networkx", None
+        except Exception as exc:
+            fallback_reason = f"networkx_louvain_failed:{type(exc).__name__}:{exc}"
+
+        try:
+            import community as community_louvain  # type: ignore
+
+            partition = community_louvain.best_partition(graph, weight="weight", random_state=42)
+            bucket: dict[int, set[str]] = defaultdict(set)
+            for node_id, community_id in partition.items():
+                bucket[int(community_id)].add(str(node_id))
+            groups = list(bucket.values())
+            return groups, modularity(groups), "louvain_python_louvain", fallback_reason
+        except Exception as exc:
+            reason = f"{fallback_reason};python_louvain_failed:{type(exc).__name__}:{exc}"
+            return wcc(reason)
 
     def _build_entity_community_map(self, communities: list[dict[str, Any]]) -> dict[str, Any]:
         entities: dict[str, dict[str, Any]] = {}
         for community in communities:
             cid = int(community.get("community_id", 0))
-            top_ids = {e["id"] for e in community.get("top_entities", [])[:3]}
-            for member_id in community.get("member_ids", []):
+            for member in community.get("members", []):
+                member_id = str(member.get("id", ""))
+                if not member_id:
+                    continue
                 item = entities.setdefault(member_id, {
                     "id": member_id,
-                    "name": member_id,
-                    "type": "Unknown",
+                    "name": member.get("name", member_id),
+                    "type": member.get("type", "Unknown"),
                     "communities": [],
                 })
+                item["name"] = member.get("name", item["name"])
+                item["type"] = member.get("type", item["type"])
                 item["communities"].append({
                     "community_id": cid,
                     "size": community.get("size", 0),
-                    "role": "core" if member_id in top_ids else "member",
+                    "role": member.get("role", "member"),
+                    "is_core": member_id in {n.get("id") for n in community.get("core_nodes", [])},
+                    "is_bridge": member_id in {n.get("id") for n in community.get("bridge_nodes", [])},
                 })
-            for top in community.get("top_entities", []):
-                item = entities.setdefault(top["id"], {
-                    "id": top["id"],
-                    "name": top.get("name", top["id"]),
-                    "type": top.get("label", "Unknown"),
-                    "communities": [],
-                })
-                item["name"] = top.get("name", item["name"])
-                item["type"] = top.get("label", item["type"])
 
+        entity_list = list(entities.values())
         return {
-            "entities": list(entities.values()),
+            "entities": entity_list,
+            "by_id": {item["id"]: item for item in entity_list},
             "mapped_count": len(entities),
             "unmapped_count": 0,
         }
+
+    def _find_seed_community_id(
+        self,
+        communities: list[dict[str, Any]],
+        seed_ids: list[str],
+    ) -> int | None:
+        seed_set = set(seed_ids)
+        best: tuple[int, int] | None = None
+        for community in communities:
+            cid = int(community.get("community_id", 0))
+            overlap = len(seed_set & set(community.get("member_ids", [])))
+            if overlap > 0 and (best is None or overlap > best[1]):
+                best = (cid, overlap)
+        return best[0] if best else None
+
+    def _build_community_edges(
+        self,
+        communities: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        community_by_node: dict[str, int] = {}
+        for community in communities:
+            cid = int(community.get("community_id", 0))
+            for member_id in community.get("member_ids", []):
+                community_by_node[str(member_id)] = cid
+
+        buckets: dict[tuple[int, int], dict[str, Any]] = {}
+        for edge in edges:
+            src = str(edge.get("source", ""))
+            tgt = str(edge.get("target", ""))
+            src_cid = community_by_node.get(src)
+            tgt_cid = community_by_node.get(tgt)
+            if src_cid is None or tgt_cid is None or src_cid == tgt_cid:
+                continue
+            key = (src_cid, tgt_cid) if src_cid < tgt_cid else (tgt_cid, src_cid)
+            item = buckets.setdefault(key, {
+                "source_community": key[0],
+                "target_community": key[1],
+                "relation_count": 0,
+                "main_relations": defaultdict(int),
+                "risk_level": "low",
+            })
+            item["relation_count"] += 1
+            relation = str(edge.get("relation") or edge.get("type") or edge.get("label") or "RELATED")
+            item["main_relations"][relation] += 1
+
+        results: list[dict[str, Any]] = []
+        for item in buckets.values():
+            relation_count = int(item["relation_count"])
+            risk_level = "high" if relation_count >= 8 else "medium" if relation_count >= 3 else "low"
+            main_relations = [
+                rel for rel, _ in sorted(item["main_relations"].items(), key=lambda kv: kv[1], reverse=True)[:5]
+            ]
+            results.append({
+                "source_community": item["source_community"],
+                "target_community": item["target_community"],
+                "relation_count": relation_count,
+                "risk_level": risk_level,
+                "main_relations": main_relations,
+            })
+        return sorted(results, key=lambda item: item["relation_count"], reverse=True)
+
+    def _build_community_graph(
+        self,
+        communities: list[dict[str, Any]],
+        community_edges: list[dict[str, Any]],
+        seed_community_id: int | None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        nodes = []
+        for community in communities:
+            cid = int(community.get("community_id", 0))
+            nodes.append({
+                "id": f"community-{cid}",
+                "community_id": cid,
+                "label": f"群体 #{cid}",
+                "size": community.get("size", 0),
+                "density": community.get("density", 0),
+                "risk_score": community.get("risk_score"),
+                "seed_related": cid == seed_community_id,
+                "top_entities": [
+                    item.get("name")
+                    for item in community.get("top_entities", [])[:5]
+                    if item.get("name")
+                ],
+                "core_nodes": community.get("core_nodes", [])[:5],
+                "bridge_nodes": community.get("bridge_nodes", [])[:5],
+            })
+        graph_edges = [
+            {
+                "source": f"community-{edge['source_community']}",
+                "target": f"community-{edge['target_community']}",
+                **edge,
+            }
+            for edge in community_edges
+        ]
+        return {"nodes": nodes, "edges": graph_edges}
 
     @staticmethod
     def _node_display_name(node: dict[str, Any]) -> str:

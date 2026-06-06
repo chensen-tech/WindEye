@@ -143,6 +143,118 @@ def _resolve_path_ids(
     return resolved
 
 
+def _candidate_paths_to_interpreted(
+    candidate_risk_paths: list[dict],
+    nodes: list[dict],
+    edges: list[dict],
+) -> list[dict]:
+    """Convert deterministic graph candidates into interpreted risk paths.
+
+    The LLM is useful for narrative filtering, but the downstream compliance
+    and report modules need a stable path schema. When the LLM returns no
+    paths, keep the governance chain alive with structural candidates.
+    """
+    if not candidate_risk_paths:
+        return []
+
+    edge_by_id: dict[str, dict] = {}
+    for edge in edges:
+        eid = str(edge.get("id") or edge.get("element_id") or "")
+        if eid:
+            edge_by_id[eid] = edge
+
+    interpreted: list[dict] = []
+    for idx, candidate in enumerate(candidate_risk_paths, 1):
+        if not isinstance(candidate, dict):
+            continue
+
+        entities = [
+            str(item) for item in candidate.get("entities", [])
+            if str(item).strip()
+        ]
+        relation = str(candidate.get("relation", "")).upper()
+        if not relation:
+            edge_ids = candidate.get("edge_ids") or []
+            first_edge = edge_by_id.get(str(edge_ids[0]), {}) if edge_ids else {}
+            relation = str(
+                first_edge.get("relation")
+                or first_edge.get("type")
+                or first_edge.get("label")
+                or first_edge.get("raw_type")
+                or "RELATED"
+            ).upper()
+
+        risk_level = str(candidate.get("risk_level_hint") or "medium").lower()
+        confidence = float(candidate.get("confidence") or 0.68)
+        if relation in {"WARNING", "GUARANTEE", "TRIGGERS", "SUE", "监管", "触发"}:
+            risk_level = "high"
+        elif relation in {
+            "INVEST", "CONTROL", "CONTROLLER", "CONTROLL", "CAUSE", "MENTION",
+            "WORK", "JOINDER", "MANAGER", "TRUSTEE", "CUSTOMER", "SUPPLIER",
+            "ISSUE", "BRANCH", "REGULATE", "映射法规",
+        }:
+            risk_level = "medium"
+
+        if len(entities) >= 2:
+            path_text = f"{entities[0]} 通过 {relation} 关系关联至 {entities[-1]}，存在潜在风险传导链路。"
+        elif entities:
+            path_text = f"{entities[0]} 关联关系 {relation} 形成潜在风险暴露。"
+        else:
+            path_text = f"图谱中发现 {relation} 关系形成潜在风险传导链路。"
+
+        interpreted.append({
+            "path_id": str(candidate.get("path_id") or f"RP-FB-{idx:03d}"),
+            "node_ids": [str(x) for x in candidate.get("node_ids", []) if str(x)],
+            "edge_ids": [str(x) for x in candidate.get("edge_ids", []) if str(x)],
+            "path_text": path_text,
+            "path_description": path_text,
+            "description": path_text,
+            "risk_level": risk_level,
+            "confidence": confidence,
+            "affected_entities": entities,
+            "relation": relation,
+            "source": "candidate_path_fallback",
+        })
+
+    return _resolve_path_ids(interpreted, nodes, edges)
+
+
+def _fallback_anomalies_from_candidates(
+    candidate_risk_paths: list[dict],
+    nodes: list[dict],
+    edges: list[dict],
+) -> list[dict]:
+    """Generate a minimal anomaly finding when structural candidates exist."""
+    if not candidate_risk_paths:
+        return []
+
+    relation_counts: dict[str, int] = {}
+    affected: list[str] = []
+    for candidate in candidate_risk_paths:
+        if not isinstance(candidate, dict):
+            continue
+        relation = str(candidate.get("relation", "RELATED")).upper()
+        relation_counts[relation] = relation_counts.get(relation, 0) + 1
+        for entity in candidate.get("entities", []):
+            name = str(entity).strip()
+            if name and name not in affected:
+                affected.append(name)
+
+    relation_summary = "、".join(f"{rel} {count}条" for rel, count in sorted(relation_counts.items()))
+    evidence = (
+        f"图谱结构发现 {len(candidate_risk_paths)} 条候选风险关系"
+        f"（{relation_summary or '关系类型待识别'}），涉及 {len(affected)} 个主体。"
+    )
+
+    return [{
+        "anomaly_type": "结构化候选风险链路",
+        "affected_entities": affected[:10],
+        "evidence": evidence,
+        "confidence": 0.62,
+        "source": "candidate_path_fallback",
+    }]
+
+
 # ── Plugin ──────────────────────────────────────────────────────────────
 
 
@@ -197,6 +309,10 @@ class RiskAnalystPlugin:
 
             # Post-process: map names → ids, infer edge_ids
             interpreted = _resolve_path_ids(raw_interpreted, nodes, edges)
+            if not interpreted and candidate_risk_paths:
+                interpreted = _candidate_paths_to_interpreted(candidate_risk_paths, nodes, edges)
+            if not anomalies and interpreted:
+                anomalies = _fallback_anomalies_from_candidates(candidate_risk_paths, nodes, edges)
 
             agent_trace("RiskAnalyst", "DECISION",
                 candidate_path_count=len(candidate_risk_paths),
@@ -209,13 +325,15 @@ class RiskAnalystPlugin:
             }
         except Exception as exc:
             logger.exception("[RiskAnalyst] Failed: %s", exc)
+            interpreted = _candidate_paths_to_interpreted(candidate_risk_paths, nodes, edges)
+            anomalies = _fallback_anomalies_from_candidates(candidate_risk_paths, nodes, edges) if interpreted else []
             agent_trace("RiskAnalyst", "DECISION",
                 candidate_path_count=len(candidate_risk_paths),
-                interpreted_path_count=0,
-                anomaly_count=0)
+                interpreted_path_count=len(interpreted),
+                anomaly_count=len(anomalies))
             return {
-                "interpreted_risk_paths": [],
-                "anomalies": [],
+                "interpreted_risk_paths": interpreted,
+                "anomalies": anomalies,
                 "risk_explanations": f"Analysis error: {exc}",
             }
 

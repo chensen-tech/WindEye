@@ -232,9 +232,11 @@ class GraphAnalyticsTool:
         # Determine risky relation types
         if relation_focus is None:
             risky_rels = {
-                "INVEST", "CONTROL", "CONTROLLER", "GUARANTEE", "SERVE",
+                "INVEST", "CONTROL", "CONTROLLER", "CONTROLL", "GUARANTEE", "SERVE",
                 "TRANSACTION", "WARNING", "MENTION", "TRIGGERS", "REFLECTS",
-                "CAUSE", "WORK",
+                "CAUSE", "WORK", "SUE", "JOINDER", "MANAGER", "TRUSTEE",
+                "CUSTOMER", "SUPPLIER", "ISSUE", "BRANCH", "REGULATE",
+                "监管", "触发", "映射法规", "执行", "履行", "包含责任方",
             }
         else:
             risky_rels = set(relation_focus)
@@ -275,8 +277,12 @@ class GraphAnalyticsTool:
                 ],
                 "relation": rel_type,
                 "risk_level_hint": (
-                    "high" if rel_type in ("WARNING", "GUARANTEE", "TRIGGERS")
-                    else "medium" if rel_type in ("CONTROL", "CONTROLLER", "INVEST", "CAUSE", "MENTION")
+                    "high" if rel_type in ("WARNING", "GUARANTEE", "TRIGGERS", "SUE", "监管", "触发")
+                    else "medium" if rel_type in (
+                        "CONTROL", "CONTROLLER", "CONTROLL", "INVEST", "CAUSE",
+                        "MENTION", "JOINDER", "MANAGER", "TRUSTEE", "CUSTOMER",
+                        "SUPPLIER", "ISSUE", "BRANCH", "REGULATE", "映射法规",
+                    )
                     else "low"
                 ),
                 "confidence": 0.7,
@@ -316,9 +322,11 @@ class GraphAnalyticsTool:
         e = len(edges)
 
         risky_rels = {
-            "INVEST", "CONTROL", "CONTROLLER", "GUARANTEE", "SERVE",
+            "INVEST", "CONTROL", "CONTROLLER", "CONTROLL", "GUARANTEE", "SERVE",
             "TRANSACTION", "WARNING", "MENTION", "TRIGGERS", "REFLECTS",
-            "CAUSE", "WORK",
+            "CAUSE", "WORK", "SUE", "JOINDER", "MANAGER", "TRUSTEE",
+            "CUSTOMER", "SUPPLIER", "ISSUE", "BRANCH", "REGULATE",
+            "监管", "触发", "映射法规", "执行", "履行", "包含责任方",
         }
         risky_edge_count = sum(
             1 for edge in edges

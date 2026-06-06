@@ -15,11 +15,13 @@ from .leiden import LeidenAlgorithm
 from .girvan_newman import GirvanNewmanAlgorithm
 from .spectral import SpectralAlgorithm
 from .infomap import InfomapAlgorithm
+from .hgt_gkmeans import HGTGKMeansAlgorithm
 
 # Register in order of sophistication
 for _alg_cls in [
     WCCAlgorithm,
     LouvainAlgorithm,
+    HGTGKMeansAlgorithm,
     LPAAlgorithm,
     LeidenAlgorithm,
     GirvanNewmanAlgorithm,
@@ -34,6 +36,7 @@ __all__ = [
     "registry",
     "WCCAlgorithm",
     "LouvainAlgorithm",
+    "HGTGKMeansAlgorithm",
     "LPAAlgorithm",
     "LeidenAlgorithm",
     "GirvanNewmanAlgorithm",

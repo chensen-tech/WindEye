@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 from typing import Any
 
+import networkx as nx
 import numpy as np
 from scipy.sparse import csr_matrix, lil_matrix
 
@@ -103,45 +104,110 @@ class LouvainAlgorithm(BaseCommunityAlgorithm):
         if m == 0:
             return [], 0.0
 
+        nx_graph = nx.Graph()
+        nx_graph.add_nodes_from(node_ids)
+        for rec in records:
+            src = str(rec.get("src", ""))
+            tgt = str(rec.get("tgt", ""))
+            if src in node_to_idx and tgt in node_to_idx:
+                nx_graph.add_edge(src, tgt, weight=1.0)
+
+        community_labels: np.ndarray | None = None
+        modularity_score: float | None = None
+        fallback_reason: str | None = None
+
+        try:
+            nx_groups = [
+                set(group)
+                for group in nx.algorithms.community.louvain_communities(
+                    nx_graph,
+                    weight="weight",
+                    seed=42,
+                )
+            ]
+            community_labels = np.zeros(n, dtype=np.int64)
+            for comm_id, group in enumerate(nx_groups):
+                for node_id in group:
+                    community_labels[node_to_idx[str(node_id)]] = comm_id
+            modularity_score = (
+                float(nx.algorithms.community.modularity(nx_graph, nx_groups, weight="weight"))
+                if len(nx_groups) > 1 else 0.0
+            )
+            logger.info("Louvain selected_method=louvain_networkx nodes=%s edges=%s", n, len(records))
+        except Exception as exc:
+            fallback_reason = f"networkx_louvain_failed:{type(exc).__name__}:{exc}"
+            logger.warning("Louvain fallback_reason=%s", fallback_reason)
+
+        if community_labels is None:
+            try:
+                import community as community_louvain  # type: ignore
+
+                partition = community_louvain.best_partition(nx_graph, weight="weight", random_state=42)
+                community_labels = np.zeros(n, dtype=np.int64)
+                py_groups: dict[int, set[str]] = defaultdict(set)
+                for node_id, comm_id in partition.items():
+                    comm_id = int(comm_id)
+                    community_labels[node_to_idx[str(node_id)]] = comm_id
+                    py_groups[comm_id].add(str(node_id))
+                modularity_score = (
+                    float(nx.algorithms.community.modularity(nx_graph, list(py_groups.values()), weight="weight"))
+                    if len(py_groups) > 1 else 0.0
+                )
+                logger.warning(
+                    "Louvain fallback_reason=%s selected_method=louvain_python_louvain nodes=%s edges=%s",
+                    fallback_reason,
+                    n,
+                    len(records),
+                )
+            except Exception as exc:
+                fallback_reason = f"{fallback_reason};python_louvain_failed:{type(exc).__name__}:{exc}"
+                logger.warning(
+                    "Louvain fallback_reason=%s selected_method=louvain_legacy_greedy nodes=%s edges=%s",
+                    fallback_reason,
+                    n,
+                    len(records),
+                )
+
         # Greedy modularity optimization (single-level Louvain)
-        communities = np.arange(n, dtype=np.int64)
-        improved = True
-        for _ in range(50):
-            if not improved:
-                break
-            improved = False
-            order = np.random.permutation(n)
-            for node in order:
-                node_comm = communities[node]
-                neigh_indices = adj[node].indices
-                if len(neigh_indices) == 0:
-                    continue
-
-                comm_gains: dict[int, float] = {}
-                k_i = degrees[node]
-                for nb in neigh_indices:
-                    nb_comm = communities[nb]
-                    if nb_comm == node_comm:
+        if community_labels is None:
+            community_labels = np.arange(n, dtype=np.int64)
+            improved = True
+            for _ in range(50):
+                if not improved:
+                    break
+                improved = False
+                order = np.random.permutation(n)
+                for node in order:
+                    node_comm = community_labels[node]
+                    neigh_indices = adj[node].indices
+                    if len(neigh_indices) == 0:
                         continue
-                    if nb_comm not in comm_gains:
-                        comm_nodes = np.where(communities == nb_comm)[0]
-                        comm_total = degrees[comm_nodes].sum()
-                        comm_gains[nb_comm] = -k_i * comm_total / (2.0 * m * m)
 
-                for nb in neigh_indices:
-                    nb_comm = communities[nb]
-                    if nb_comm != node_comm and nb_comm in comm_gains:
-                        comm_gains[nb_comm] += 1.0 / m
+                    comm_gains: dict[int, float] = {}
+                    k_i = degrees[node]
+                    for nb in neigh_indices:
+                        nb_comm = community_labels[nb]
+                        if nb_comm == node_comm:
+                            continue
+                        if nb_comm not in comm_gains:
+                            comm_nodes = np.where(community_labels == nb_comm)[0]
+                            comm_total = degrees[comm_nodes].sum()
+                            comm_gains[nb_comm] = -k_i * comm_total / (2.0 * m * m)
 
-                if comm_gains:
-                    best_comm = max(comm_gains, key=comm_gains.get)
-                    if comm_gains[best_comm] > 0:
-                        communities[node] = best_comm
-                        improved = True
+                    for nb in neigh_indices:
+                        nb_comm = community_labels[nb]
+                        if nb_comm != node_comm and nb_comm in comm_gains:
+                            comm_gains[nb_comm] += 1.0 / m
+
+                    if comm_gains:
+                        best_comm = max(comm_gains, key=comm_gains.get)
+                        if comm_gains[best_comm] > 0:
+                            community_labels[node] = best_comm
+                            improved = True
 
         # Map communities back
         comm_groups: dict[int, list[int]] = defaultdict(list)
-        for idx, comm in enumerate(communities):
+        for idx, comm in enumerate(community_labels):
             comm_groups[comm].append(idx)
 
         # Build node_info dict
@@ -184,7 +250,7 @@ class LouvainAlgorithm(BaseCommunityAlgorithm):
             if src and tgt:
                 edge_set.add((src, tgt) if src < tgt else (tgt, src))
 
-        modularity = self._compute_modularity(adj, communities, degrees, m)
+        modularity = modularity_score if modularity_score is not None else self._compute_modularity(adj, community_labels, degrees, m)
         return (
             build_community_list(
                 comm_groups, node_info, edge_set, min_size, node_to_idx, node_ids
