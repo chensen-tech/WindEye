@@ -20,6 +20,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: real scraping with network (requires Chrome/WebDriver)")
     config.addinivalue_line("markers", "demo: demo mode tests (no network needed)")
     config.addinivalue_line("markers", "sentiment: sentiment scraper tests (may require network)")
+    config.addinivalue_line("markers", "graph_search: tests for POST /api/v1/graph/search-all endpoint")
 
 
 # ── Directory fixtures ─────────────────────────────────────────────────────
@@ -53,6 +54,33 @@ def event_config_bse(scraper_data_dir: str) -> dict:
 @pytest.fixture
 def sentiment_config(scraper_data_dir: str) -> dict:
     return {"source": "stockstar", "max_pages": 1}
+
+
+# ── Graph search API test fixtures ──────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def test_client():
+    """FastAPI TestClient with mocked Neo4jClient for graph search tests.
+
+    Patches ``api.graph_routes._client`` so no real database connection
+    is attempted.  The returned mock can be accessed via
+    ``test_client.app_state`` or by importing and inspecting the patch.
+    """
+    from unittest.mock import MagicMock, patch
+
+    mock_db = MagicMock()
+    mock_db.execute_read_with_summary = MagicMock(
+        return_value=([], {"result_count": 0})
+    )
+
+    with patch("api.graph_routes._client", return_value=mock_db):
+        from fastapi.testclient import TestClient
+
+        from main import app
+
+        client = TestClient(app)
+        client._mock_db = mock_db  # type: ignore[attr-defined]
+        yield client
 
 
 # ── WebDriver availability check ───────────────────────────────────────────

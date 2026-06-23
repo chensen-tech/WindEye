@@ -85,6 +85,67 @@ export default [
     icon: 'radarChart',
     component: './CommunityDiscovery',
   },
+  {
+    path: '/system',
+    name: 'system',
+    icon: 'safetyCertificate',
+    access: 'canViewSystem',
+    routes: [
+      {
+        path: '/system',
+        redirect: '/system/access',
+      },
+      {
+        path: '/system/access',
+        name: 'system-access',
+        icon: 'idcard',
+        component: './System/Access',
+        access: 'canViewSystem',
+      },
+      {
+        path: '/system/admin',
+        name: 'system-dashboard',
+        icon: 'dashboard',
+        component: './System/Admin',
+        access: 'canViewSystem',
+      },
+      {
+        path: '/system/users',
+        name: 'system-users',
+        icon: 'user',
+        component: './System/Users',
+        access: 'canManageUsers',
+      },
+      {
+        path: '/system/roles',
+        name: 'system-roles',
+        icon: 'team',
+        component: './System/Roles',
+        access: 'canManageRoles',
+      },
+      {
+        path: '/system/permissions',
+        name: 'system-permissions',
+        icon: 'key',
+        component: './System/Permissions',
+        access: 'canManageRoles',
+      },
+      {
+        path: '/system/audit-logs',
+        name: 'system-audit-logs',
+        icon: 'audit',
+        component: './System/AuditLogs',
+        access: 'canViewAuditLogs',
+      },
+      {
+        path: '/system/api-logs',
+        name: 'system-api-logs',
+        icon: 'api',
+        component: './System/ApiLogs',
+        access: 'canViewApiLogs',
+      },
+    ],
+  },
   // ═══════════════════════════════════════════════════════════════════
   // End module routes
   // ═══════════════════════════════════════════════════════════════════

@@ -55,5 +55,50 @@ class Settings:
     ALIGNMENT_MODEL_VERSION: str = os.getenv("ALIGNMENT_MODEL_VERSION", "v1.0")
     ALIGNMENT_SIMILARITY_FN: str = os.getenv("ALIGNMENT_SIMILARITY_FN", "cosine")
 
+    # ── [ALL] MySQL（用户/权限/审计日志）──────────────────────────
+    MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
+    MYSQL_USER: str = os.getenv("MYSQL_USER", "windeye")
+    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "")
+    MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "windeye")
+    MYSQL_POOL_SIZE: int = int(os.getenv("MYSQL_POOL_SIZE", "5"))
+    MYSQL_POOL_MAX: int = int(os.getenv("MYSQL_POOL_MAX", "20"))
+    MYSQL_ENABLED: bool = os.getenv(
+        "MYSQL_ENABLED",
+        "true" if os.getenv("MYSQL_PASSWORD", "") else "false",
+    ).lower() == "true"
+
+    # ── [ALL] JWT 认证 ────────────────────────────────────────────
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_ACCESS_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_EXPIRE_MINUTES", "120"))
+    JWT_REFRESH_EXPIRE_DAYS: int = int(os.getenv("JWT_REFRESH_EXPIRE_DAYS", "7"))
+
+    # ── [ALL] 认证开关 ────────────────────────────────────────────
+    AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+    AUTH_MODE: str = os.getenv(
+        "AUTH_MODE",
+        "enforce" if AUTH_ENABLED else "off",
+    ).lower()
+
+    # ── [ALL] Redis（Token 黑名单 + 权限缓存）─────────────────────
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_ENABLED: bool = os.getenv("REDIS_ENABLED", "false").lower() == "true"
+
+    # ── [ALL] 审计日志 ────────────────────────────────────────────
+    LOG_RETENTION_DAYS: int = int(os.getenv("LOG_RETENTION_DAYS", "180"))
+    LOG_SLOW_REQUEST_MS: int = int(os.getenv("LOG_SLOW_REQUEST_MS", "3000"))
+    AUDIT_API_LOG_ENABLED: bool = os.getenv(
+        "AUDIT_API_LOG_ENABLED",
+        "true" if MYSQL_ENABLED else "false",
+    ).lower() == "true"
+    AUDIT_OPERATION_LOG_ENABLED: bool = os.getenv(
+        "AUDIT_OPERATION_LOG_ENABLED",
+        "true" if MYSQL_ENABLED else "false",
+    ).lower() == "true"
+
 
 settings = Settings()

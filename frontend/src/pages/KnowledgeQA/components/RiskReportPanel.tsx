@@ -167,6 +167,21 @@ function getNodeDisplayType(node: any): string {
   return String(node?.type || node?.label || node?.labels?.[0] || node?.properties?.type || inferClientEntityType(getNodeDisplayName(node)));
 }
 
+function resolveNodeVisual(entityType: string): { fill: string; stroke: string } {
+  const t = (entityType || '').toUpperCase();
+  if (t === 'COMPANY' || t === 'SUBJECT') return { fill: '#BAE7FF', stroke: '#1677ff' };
+  if (t === 'PERSON') return { fill: '#D3ADF7', stroke: '#722ed1' };
+  if (t === 'EVENT') return { fill: '#FFA39E', stroke: '#cf1322' };
+  if (t === 'SUB_EVENT') return { fill: '#FFCCC7', stroke: '#cf1322' };
+  if (t === 'TIME') return { fill: '#D9D9D9', stroke: '#595959' };
+  if (t === 'RISKFEATURE') return { fill: '#B7EB8F', stroke: '#389e0d' };
+  if (t === 'RISKFACTOR') return { fill: '#95DE64', stroke: '#389e0d' };
+  if (t === 'ACTION') return { fill: '#D9D9D9', stroke: '#595959' };
+  if (t === 'REGULATION') return { fill: '#FFE58F', stroke: '#d48806' };
+  if (t === 'LAW') return { fill: '#FFD666', stroke: '#d48806' };
+  return { fill: '#F5F5F5', stroke: '#8c8c8c' };
+}
+
 function getGraphCounts(graph: any): { nodes: number; edges: number } {
   return {
     nodes: Array.isArray(graph?.nodes) ? graph.nodes.length : 0,
@@ -452,8 +467,8 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
       name: getNodeDisplayName(node),
       type: getNodeDisplayType(node),
     })).filter((node: any) => node.name);
-    if (normalized.length > 0) return normalized.slice(0, 6);
-    return riskSubjects.slice(0, 6);
+    if (normalized.length > 0) return normalized;
+    return riskSubjects;
   }, [seedNodes, riskSubjects]);
 
   const communityIdByNode = useMemo(() => {
@@ -597,29 +612,70 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
       if (b[0] === 'unknown') return -1;
       return b[1].length - a[1].length;
     });
-    const knownGroupCount = groups.filter(([key]) => key !== 'unknown').length;
-    const columns = knownGroupCount <= 2 ? knownGroupCount || 1 : Math.ceil(Math.sqrt(knownGroupCount));
-    const rows = Math.max(1, Math.ceil(Math.max(knownGroupCount, 1) / Math.max(columns, 1)));
-    const cellWidth = 86 / Math.max(columns, 1);
-    const cellHeight = 76 / rows;
-    const communityCenters = groups.map(([key], index) => {
-      if (groups.length === 1) return { x: 50, y: 50, cellWidth: 86, cellHeight: 76 };
-      if (key === 'unknown') return { x: 50, y: 91, cellWidth: 32, cellHeight: 16 };
-      const knownIndex = groups.slice(0, index).filter(([groupKey]) => groupKey !== 'unknown').length;
-      const col = knownIndex % Math.max(columns, 1);
-      const row = Math.floor(knownIndex / Math.max(columns, 1));
+    const groupRadii = groups.map(([key, group]) => {
+      if (groups.length === 1) return 24.0;
+      if (key === 'unknown') return 8.0;
+      // Dynamic radius based on member count, ensuring large groups get wider radii
+      return Math.max(9.0, Math.min(26.0, Math.sqrt(group.length) * 3.8));
+    });
+
+    const centers = groups.map(([key, group], i) => {
+      if (groups.length === 1) return { x: 50, y: 50 };
+      if (key === 'unknown') return { x: 50, y: 88 };
+
+      const angle = (i * 2 * Math.PI) / Math.max(1, groups.length - (groups.some(([k]) => k === 'unknown') ? 1 : 0));
       return {
-        x: 7 + cellWidth * (col + 0.5),
-        y: 12 + cellHeight * (row + 0.5),
-        cellWidth,
-        cellHeight,
+        x: 50 + Math.cos(angle) * 28,
+        y: 45 + Math.sin(angle) * 24,
       };
     });
 
+    // Run 60 iterations of relaxation (force-directed placement of community centers)
+    if (groups.length > 1) {
+      for (let iter = 0; iter < 60; iter++) {
+        for (let i = 0; i < groups.length; i++) {
+          const c_i = centers[i];
+          const r_i = groupRadii[i];
+          let fx = 0;
+          let fy = 0;
+
+          // Repulsion from other communities
+          for (let j = 0; j < groups.length; j++) {
+            if (i === j) continue;
+            const c_j = centers[j];
+            const r_j = groupRadii[j];
+
+            const dx = c_i.x - c_j.x;
+            const dy = c_i.y - c_j.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            // Radii sum + safety margin to prevent crowding
+            const minDist = r_i + r_j + 7.5;
+
+            if (dist < minDist) {
+              const force = (minDist - dist) / dist;
+              fx += dx * force * 0.45;
+              fy += dy * force * 0.45;
+            }
+          }
+
+          // Gravity towards center (50, 46) to keep communities nicely contained
+          fx += (50 - c_i.x) * 0.08;
+          fy += (46 - c_i.y) * 0.08;
+
+          c_i.x += fx;
+          c_i.y += fy;
+
+          // Constraints to keep groups within visible SVG bounds
+          const margin = r_i + 3.0;
+          c_i.x = Math.max(margin, Math.min(100 - margin, c_i.x));
+          c_i.y = Math.max(margin + 5.0, Math.min(100 - margin - 5.0, c_i.y));
+        }
+      }
+    }
+
     groups.forEach(([key, group], groupIndex) => {
-      const center = key === 'unknown' && groups.length > 1
-        ? { x: 50, y: 84, cellWidth: 32, cellHeight: 16 }
-        : communityCenters[groupIndex];
+      const center = centers[groupIndex];
+      const r_i = groupRadii[groupIndex];
       const sortedGroup = [...group].sort((a: any, b: any) => {
         if (a.isSeed && !b.isSeed) return -1;
         if (!a.isSeed && b.isSeed) return 1;
@@ -631,17 +687,35 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
         anchor.x = center.x;
         anchor.y = center.y;
       }
-      const orbitRadiusX = groups.length === 1
-        ? Math.min(34, Math.max(20, 10 + Math.sqrt(group.length) * 4.6))
-        : Math.min(center.cellWidth * 0.34, Math.max(5.5, Math.sqrt(group.length) * 2.2));
-      const orbitRadiusY = groups.length === 1
-        ? Math.min(27, Math.max(16, 8 + Math.sqrt(group.length) * 3.6))
-        : Math.min(center.cellHeight * 0.34, Math.max(5, Math.sqrt(group.length) * 1.9));
-      orbitNodes.forEach((node: any, index: number) => {
-        const angle = (Math.PI * 2 * index) / Math.max(orbitNodes.length, 1) - Math.PI / 2;
-        node.x = Math.max(7, Math.min(93, center.x + Math.cos(angle) * orbitRadiusX));
-        node.y = Math.max(10, Math.min(90, center.y + Math.sin(angle) * orbitRadiusY));
-      });
+
+      const orbitRadiusX = r_i * 0.72;
+      const orbitRadiusY = r_i * 0.62;
+
+      if (orbitNodes.length <= 10) {
+        // Single ring layout for smaller groups
+        orbitNodes.forEach((node: any, index: number) => {
+          const angle = (Math.PI * 2 * index) / Math.max(1, orbitNodes.length) - Math.PI / 2;
+          node.x = Math.max(4, Math.min(96, center.x + Math.cos(angle) * orbitRadiusX));
+          node.y = Math.max(4, Math.min(96, center.y + Math.sin(angle) * orbitRadiusY));
+        });
+      } else {
+        // Multi-ring (concentric) layout for larger groups to prevent overlapping/clumping
+        const innerCount = Math.floor(orbitNodes.length * 0.35);
+        const outerCount = orbitNodes.length - innerCount;
+
+        orbitNodes.forEach((node: any, index: number) => {
+          if (index < innerCount) {
+            const angle = (Math.PI * 2 * index) / Math.max(1, innerCount) - Math.PI / 2;
+            node.x = Math.max(4, Math.min(96, center.x + Math.cos(angle) * orbitRadiusX * 0.48));
+            node.y = Math.max(4, Math.min(96, center.y + Math.sin(angle) * orbitRadiusY * 0.48));
+          } else {
+            const outerIndex = index - innerCount;
+            const angle = (Math.PI * 2 * outerIndex) / Math.max(1, outerCount) - Math.PI / 2;
+            node.x = Math.max(4, Math.min(96, center.x + Math.cos(angle) * orbitRadiusX));
+            node.y = Math.max(4, Math.min(96, center.y + Math.sin(angle) * orbitRadiusY));
+          }
+        });
+      }
     });
 
     nodes.forEach((node: any) => {
@@ -1346,14 +1420,13 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                             );
                           })}
                           {communityPreviewGraph.nodes.map((node: any, index: number) => {
+                            const visual = resolveNodeVisual(node.type);
+                            const nodeFill = visual.fill;
+                            const strokeColor = node.isSeed ? '#2855D1' : visual.stroke;
+                            const strokeWidth = node.isSeed ? 1.6 : 1.0;
                             const color = node.communityId !== undefined
                               ? COMMUNITY_PALETTE[node.communityId % COMMUNITY_PALETTE.length]
-                              : NODE_TYPE_COLORS[node.type] || '#64748b';
-                            const nodeFill = node.type === 'EVENT' || node.type === 'RiskFeature'
-                              ? '#fee2e2'
-                              : node.type === 'PERSON'
-                                ? '#ede9fe'
-                                : '#bfdbfe';
+                              : visual.stroke;
                             const isActiveNode = hoveredCommunityNodeId === node.id || draggingCommunityNodeId === node.id;
                             const showLabel = isActiveNode;
                             const fullLabel = node.name.length > 18 ? `${node.name.slice(0, 17)}...` : node.name;
@@ -1372,32 +1445,36 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                               >
                                 <title>{`${node.name}${node.communityId !== undefined ? ` / 群体 #${node.communityId}` : ''}`}</title>
                                 {node.isSeed && (
-                                  <circle
-                                    cx={node.x}
-                                    cy={node.y}
-                                    r={node.radius + 1.05}
-                                    fill="none"
-                                    stroke="#f59e0b"
-                                    strokeWidth="1.15"
-                                    vectorEffect="non-scaling-stroke"
-                                  />
+                                  <>
+                                    <circle
+                                      cx={node.x}
+                                      cy={node.y}
+                                      r={node.radius + 1.4}
+                                      fill="none"
+                                      stroke="rgba(40, 85, 209, 0.28)"
+                                      strokeWidth="2.0"
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                    <circle
+                                      cx={node.x}
+                                      cy={node.y}
+                                      r={node.radius + 0.7}
+                                      fill="none"
+                                      stroke="rgba(40, 85, 209, 0.48)"
+                                      strokeWidth="1.0"
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                  </>
                                 )}
                                 <circle
                                   cx={node.x}
                                   cy={node.y}
                                   r={node.radius}
                                   fill={nodeFill}
-                                  stroke={color}
-                                  strokeWidth={node.isSeed ? 1.25 : 1.05}
+                                  stroke={strokeColor}
+                                  strokeWidth={strokeWidth}
                                   filter="url(#communityNodeShadow)"
                                   vectorEffect="non-scaling-stroke"
-                                />
-                                <circle
-                                  cx={node.x}
-                                  cy={node.y}
-                                  r={Math.max(0.8, node.radius * 0.32)}
-                                  fill={color}
-                                  opacity="0.95"
                                 />
                                 {showLabel && (
                                   <g style={{ pointerEvents: 'none' }}>
@@ -1409,7 +1486,7 @@ const RiskReportPanel: React.FC<RiskReportPanelProps> = ({
                                       rx="1.8"
                                       fill="#ffffff"
                                       fillOpacity="0.94"
-                                      stroke={`${color}55`}
+                                      stroke={`${visual.stroke}55`}
                                       strokeWidth="0.45"
                                       vectorEffect="non-scaling-stroke"
                                     />

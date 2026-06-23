@@ -10,10 +10,12 @@ logger = logging.getLogger(__name__)
 # ── Layer label mapping ────────────────────────────────────────────────
 
 _LAYER_LABEL_MAP: dict[str, list[str]] = {
-    "Subject": ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY"],
-    "Event": ["Event", "EVENT", "TIME", "REGULATOR"],
-    "Feature": ["Feature", "RiskFeature", "RiskFactor"],
-    "Regulation": ["Regulation", "Law", "Action"],
+    "Subject": ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY",
+                "PartyWithResponsibility", "Actor", "Account"],
+    "Event": ["Event", "EVENT", "Means"],
+    "Feature": ["Feature", "AdvantageHolder", "Influence",
+                "DisadvantageHolder", "Advantage"],
+    "Regulation": ["Regulation", "Law", "Action", "Chapter"],
 }
 _ALL_VALID_LABELS = [label for labels in _LAYER_LABEL_MAP.values() for label in labels]
 

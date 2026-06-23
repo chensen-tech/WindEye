@@ -25,6 +25,7 @@ export default defineConfig({
   hash: true,
 
   publicPath: PUBLIC_PATH,
+  outputPath: process.env.OUTPUT_PATH || 'dist',
 
   /**
    * @name 兼容性设置
@@ -175,12 +176,11 @@ export default defineConfig({
    * @description 使用 mako 极速研发
    * @doc https://umijs.org/docs/api/config#mako
    */
-  mako: {},
+  mako: process.env.USE_MAKO === 'true' ? {} : false,
   esbuildMinifyIIFE: true,
   requestRecord: {},
   exportStatic: {},
   define: {
     'process.env.CI': process.env.CI,
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
   },
 });

@@ -23,10 +23,12 @@ logger = logging.getLogger(__name__)
 
 # Keep references for backward compatibility — these are used by other modules
 _LAYER_LABEL_MAP: dict[str, list[str]] = {
-    "Subject": ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY"],
-    "Event": ["Event", "EVENT", "TIME", "REGULATOR"],
-    "Feature": ["Feature", "RiskFeature", "RiskFactor"],
-    "Regulation": ["Regulation", "Law", "Action"],
+    "Subject": ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY",
+                "PartyWithResponsibility", "Actor", "Account"],
+    "Event": ["Event", "EVENT", "Means"],
+    "Feature": ["Feature", "AdvantageHolder", "Influence",
+                "DisadvantageHolder", "Advantage"],
+    "Regulation": ["Regulation", "Law", "Action", "Chapter"],
 }
 _ALL_VALID_LABELS = [label for labels in _LAYER_LABEL_MAP.values() for label in labels]
 
@@ -35,6 +37,28 @@ def _layer_filter(layer: str | None) -> list[str]:
     if layer and layer in _LAYER_LABEL_MAP:
         return _LAYER_LABEL_MAP[layer]
     return _ALL_VALID_LABELS
+
+
+def _infer_dominant_layer(label_distribution: dict[str, int]) -> str:
+    """Infer the dominant layer for a community from its label distribution.
+
+    Counts labels belonging to each layer and returns the layer with the
+    most nodes. Ties are broken by layer priority: Subject > Event >
+    Regulation > Feature.
+    """
+    layer_counts: dict[str, int] = {}
+    for layer_name, layer_labels in _LAYER_LABEL_MAP.items():
+        layer_counts[layer_name] = sum(
+            label_distribution.get(lbl, 0) for lbl in layer_labels
+        )
+    if not layer_counts:
+        return "Unknown"
+    priority = ["Subject", "Event", "Regulation", "Feature"]
+    best = max(
+        priority,
+        key=lambda k: (layer_counts.get(k, 0), priority.index(k)),
+    )
+    return best if layer_counts.get(best, 0) > 0 else "Unknown"
 
 
 class GraphAnalytics:
@@ -222,6 +246,10 @@ class GraphAnalytics:
         self,
         seed_names: list[str] | None = None,
         seed_ids: list[str] | None = None,
+        auto_select_seeds: bool = False,
+        top_k_seeds: int = 5,
+        seed_selection_mode: str = "risk_score",
+        risk_constraints: dict[str, bool] | None = None,
         max_hop: int = 2,
         method: str = "louvain",
         min_community_size: int = 2,
@@ -265,6 +293,33 @@ class GraphAnalytics:
                 "input": {"seed_names": seed_names, "seed_ids": seed_ids},
             }
 
+        candidate_seeds = []
+        seed_selection = {
+            "mode": seed_selection_mode,
+            "topK": top_k_seeds,
+            "selectedCount": 0
+        }
+
+        if auto_select_seeds:
+            candidate_seeds = self._select_candidate_seeds(resolved_seed_ids, top_k_seeds, risk_constraints)
+            if candidate_seeds:
+                resolved_seed_ids = [c["nodeId"] for c in candidate_seeds]
+                seed_selection["selectedCount"] = len(resolved_seed_ids)
+                # Ensure selected seeds are in seed_nodes for downstream compatibility if needed
+                # We could fetch their full node details, but candidate_seeds has basic info.
+        else:
+            # Format seed_nodes as candidateSeeds for consistency if auto-select is off
+            for n in seed_nodes:
+                candidate_seeds.append({
+                    "nodeId": n.get("id"),
+                    "name": n.get("name") or n.get("title", ""),
+                    "labels": n.get("labels", []),
+                    "riskScore": 100,
+                    "riskFactors": {},
+                    "reason": "Direct input"
+                })
+            seed_selection["selectedCount"] = len(resolved_seed_ids)
+
         subgraph = self._extract_seed_connected_subgraph(
             resolved_seed_ids,
             max_hop=max_hop,
@@ -304,6 +359,9 @@ class GraphAnalytics:
             "input": {
                 "seed_names": seed_names,
                 "seed_ids": seed_ids,
+                "auto_select_seeds": auto_select_seeds,
+                "top_k_seeds": top_k_seeds,
+                "seed_selection_mode": seed_selection_mode,
                 "max_hop": max_hop,
                 "path_limit": path_limit,
                 "max_nodes": max_nodes,
@@ -312,6 +370,9 @@ class GraphAnalytics:
                 "community_mode": community_mode,
             },
             "seed_nodes": seed_nodes,
+            "candidate_seeds": candidate_seeds,
+            "selected_seed_ids": resolved_seed_ids,
+            "seed_selection": seed_selection,
             "subgraph": subgraph,
             "connected_subgraph": connected,
             "node_count": len(connected.get("nodes", [])),
@@ -336,6 +397,81 @@ class GraphAnalytics:
                 "highlight_seed_ids": resolved_seed_ids,
             },
         }
+
+    def _select_candidate_seeds(self, initial_seed_ids: list[str], top_k: int, risk_constraints: dict[str, bool] | None) -> list[dict[str, Any]]:
+        """Identify candidate Subjects related to the initial seeds and score their risk."""
+        # This query expands from the initial seeds (which could be events, companies, etc.)
+        # up to 2 hops to find 'Subject' nodes, then calculates heuristic risk scores.
+        query = """
+        UNWIND $ids AS seedId
+        MATCH (s) WHERE elementId(s) = seedId
+
+        // Find candidate Subjects (0-2 hops)
+        OPTIONAL MATCH path=(s)-[*0..2]-(c)
+        WHERE any(label IN labels(c) WHERE label IN ['COMPANY', 'PERSON', 'Entity'])
+        WITH DISTINCT c
+        WHERE c IS NOT NULL
+
+        // Calculate Risk Factors
+        OPTIONAL MATCH (c)-[re:SUE|JOINDER|PARTICIPATE_IN|MENTION]-(e:EVENT)
+        WITH c, count(DISTINCT e) AS eventCount
+
+        OPTIONAL MATCH (c)-[rh:GUARANTEE|CONTROLLER|INVEST]-(other)
+        WITH c, eventCount, count(DISTINCT rh) AS highRiskRelationCount
+
+        OPTIONAL MATCH (c)-[rl:COMPLIES_WITH]-(law:Law)
+        WITH c, eventCount, highRiskRelationCount, count(DISTINCT law) AS regulationCount
+
+        WITH c, eventCount, highRiskRelationCount, regulationCount,
+             (eventCount * 20 + highRiskRelationCount * 15 + regulationCount * 10) AS baseScore
+
+        // Normalize score 0-100
+        WITH c, eventCount, highRiskRelationCount, regulationCount,
+             CASE WHEN baseScore > 100 THEN 100 ELSE baseScore END AS riskScore
+
+        WHERE riskScore >= 90
+        ORDER BY riskScore DESC, eventCount DESC
+
+
+        RETURN elementId(c) AS nodeId,
+               coalesce(c.name, c.COMPANY_NM, c.PERSON_NM, '') AS name,
+               labels(c) AS labels,
+               riskScore,
+               eventCount,
+               highRiskRelationCount,
+               regulationCount
+        """
+        try:
+            records, _ = self._db.execute_read_with_summary(query, {"ids": initial_seed_ids, "topK": top_k})
+            candidates = []
+            for record in records:
+                # Provide a reason string based on factors
+                events = record["eventCount"]
+                rels = record["highRiskRelationCount"]
+                regs = record["regulationCount"]
+                reasons = []
+                if events > 0: reasons.append(f"关联 {events} 个风险事件")
+                if rels > 0: reasons.append(f"包含 {rels} 条高风险关系")
+                if regs > 0: reasons.append(f"关联 {regs} 个法规映射")
+                reason_str = "、".join(reasons) if reasons else "子图相关实体"
+
+                candidates.append({
+                    "nodeId": record["nodeId"],
+                    "name": record["name"],
+                    "labels": record["labels"],
+                    "riskScore": record["riskScore"],
+                    "riskFactors": {
+                        "eventCount": events,
+                        "highRiskRelationCount": rels,
+                        "regulationCount": regs,
+                        "bridgeScore": 0.5  # mock default
+                    },
+                    "reason": reason_str
+                })
+            return candidates
+        except Exception as e:
+            logger.exception("Failed to select candidate seeds")
+            return []
 
     def _resolve_seed_nodes(self, seed_names: list[str], seed_ids: list[str]) -> list[dict[str, Any]]:
         from core.database import Neo4jClient
@@ -364,16 +500,25 @@ class GraphAnalytics:
 
         if seed_names:
             try:
+                all_labels = [lbl for labels in _LAYER_LABEL_MAP.values() for lbl in labels]
+                subject_labels = _LAYER_LABEL_MAP.get("Subject", [])
+                event_labels = _LAYER_LABEL_MAP.get("Event", [])
+                regulation_labels = _LAYER_LABEL_MAP.get("Regulation", [])
                 records, _ = self._db.execute_read_with_summary(
                     """
                     UNWIND $names AS input_name
                     MATCH (n)
-                    WHERE any(label IN labels(n) WHERE label IN [
-                        'Subject','COMPANY','PERSON','PFCOMPANY','PFUND','SECURITY'
-                    ])
+                    WHERE any(label IN labels(n) WHERE label IN $all_labels)
                     WITH input_name, n,
                          coalesce(n.name, n.title, n.COMPANY_NM, n.PERSON_NM,
-                                  n.SECURITY_NM, n.FUND_NM, '') AS display_name
+                                  n.SECURITY_NM, n.FUND_NM, n.EVENT_NM, n.feature_nm,
+                                  n.regulation_name, n.action_name, n.law_name, '') AS display_name,
+                         CASE
+                           WHEN any(label IN labels(n) WHERE label IN $subject_labels) THEN 0
+                           WHEN any(label IN labels(n) WHERE label IN $event_labels) THEN 1
+                           WHEN any(label IN labels(n) WHERE label IN $regulation_labels) THEN 2
+                           ELSE 3
+                         END AS layer_priority
                     WHERE display_name <> ''
                       AND (
                            toLower(display_name) = toLower(input_name)
@@ -381,9 +526,16 @@ class GraphAnalytics:
                         OR toLower(input_name) CONTAINS toLower(display_name)
                       )
                     RETURN n, input_name AS input
+                    ORDER BY layer_priority
                     LIMIT 100
                     """,
-                    {"names": seed_names},
+                    {
+                        "names": seed_names,
+                        "all_labels": all_labels,
+                        "subject_labels": subject_labels,
+                        "event_labels": event_labels,
+                        "regulation_labels": regulation_labels,
+                    },
                 )
                 for record in records:
                     node = record.get("n")
@@ -413,13 +565,7 @@ class GraphAnalytics:
                 WHERE elementId(seed) IN $seed_ids
                 MATCH path = (seed)-[*1..{max_hop}]-(neighbor)
                 WHERE ($relation_whitelist = [] OR all(rel IN relationships(path) WHERE type(rel) IN $relation_whitelist))
-                  AND any(label IN labels(neighbor) WHERE label IN [
-                    'Subject','Event','Feature','Regulation',
-                    'COMPANY','PERSON','PFCOMPANY','PFUND','SECURITY',
-                    'TIME','EVENT','REGULATOR',
-                    'RiskFeature','RiskFactor',
-                    'Law','Action'
-                ])
+                  AND any(label IN labels(neighbor) WHERE label IN $all_labels)
                 WITH path LIMIT $path_limit
                 WITH collect(DISTINCT nodes(path)) AS node_paths,
                      collect(DISTINCT relationships(path)) AS rel_paths
@@ -435,6 +581,7 @@ class GraphAnalytics:
                     "seed_ids": seed_ids,
                     "path_limit": path_limit,
                     "relation_whitelist": relation_whitelist,
+                    "all_labels": [lbl for labels in _LAYER_LABEL_MAP.values() for lbl in labels],
                 },
                 timeout_seconds=20.0,
             )
@@ -715,6 +862,7 @@ class GraphAnalytics:
                 "density": round(float(density), 4),
                 "internal_edges": len(internal_edges),
                 "label_distribution": dict(label_distribution),
+                "dominant_layer": _infer_dominant_layer(label_distribution),
                 "members": member_items[:500],
                 "core_nodes": core_nodes,
                 "bridge_nodes": bridge_nodes,
@@ -905,19 +1053,31 @@ class GraphAnalytics:
             relation = str(edge.get("relation") or edge.get("type") or edge.get("label") or "RELATED")
             item["main_relations"][relation] += 1
 
+        community_layer: dict[int, str] = {}
+        for community in communities:
+            cid = int(community.get("community_id", 0))
+            community_layer[cid] = community.get("dominant_layer", "Unknown")
+
         results: list[dict[str, Any]] = []
         for item in buckets.values():
+            src_cid = item["source_community"]
+            tgt_cid = item["target_community"]
             relation_count = int(item["relation_count"])
             risk_level = "high" if relation_count >= 8 else "medium" if relation_count >= 3 else "low"
             main_relations = [
                 rel for rel, _ in sorted(item["main_relations"].items(), key=lambda kv: kv[1], reverse=True)[:5]
             ]
+            src_layer = community_layer.get(src_cid, "Unknown")
+            tgt_layer = community_layer.get(tgt_cid, "Unknown")
             results.append({
-                "source_community": item["source_community"],
-                "target_community": item["target_community"],
+                "source_community": src_cid,
+                "target_community": tgt_cid,
                 "relation_count": relation_count,
                 "risk_level": risk_level,
                 "main_relations": main_relations,
+                "cross_layer": src_layer != tgt_layer,
+                "source_layer": src_layer,
+                "target_layer": tgt_layer,
             })
         return sorted(results, key=lambda item: item["relation_count"], reverse=True)
 
@@ -936,6 +1096,7 @@ class GraphAnalytics:
                 "label": f"群体 #{cid}",
                 "size": community.get("size", 0),
                 "density": community.get("density", 0),
+                "dominant_layer": community.get("dominant_layer", "Unknown"),
                 "risk_score": community.get("risk_score"),
                 "seed_related": cid == seed_community_id,
                 "top_entities": [

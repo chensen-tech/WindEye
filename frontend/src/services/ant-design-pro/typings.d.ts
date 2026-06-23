@@ -21,12 +21,18 @@ declare namespace API {
     };
     address?: string;
     phone?: string;
+    department?: string;
+    roles?: { id: number; roleCode: string; roleName: string }[];
+    permissions?: string[];
   };
 
   type LoginResult = {
     status?: string;
     type?: string;
     currentAuthority?: string;
+    accessToken?: string;
+    refreshToken?: string;
+    expiresIn?: number;
   };
 
   type PageParams = {

@@ -54,9 +54,11 @@ class Neo4jConnection:
                 self._driver = None
         
         try:
-            uri = os.getenv("NEO4J_URI", "neo4j+ssc://56b9e61e.databases.neo4j.io")
+            uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
             user = os.getenv("NEO4J_USER", "neo4j")
-            password = os.getenv("NEO4J_PASSWORD", "pcd7f-6QbQnsv5O6qVXNRBT05dHbaU91gCVlH0c7NVg")
+            password = os.getenv("NEO4J_PASSWORD", "")
+            if not password:
+                raise RuntimeError("NEO4J_PASSWORD is required")
             
             uri = uri.replace("：", ":")
             if not uri.startswith(('neo4j+s://', 'neo4j+ssc://')):

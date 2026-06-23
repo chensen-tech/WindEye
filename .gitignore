@@ -1,52 +1,82 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# virtual environment
+venv/
+env/
+.venv/
+.env
+backend/.env
+
+# IDE
+.idea/
+.vscode/
+.history/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
 
 # dependencies
 **/node_modules
-# roadhog-api-doc ignore
-/src/utils/request-temp.js
-_roadhog-api-doc
 
-# production
-/dist
-
-# misc
-.DS_Store
-npm-debug.log*
-yarn-error.log
-
-/coverage
-.idea
-yarn.lock
-package-lock.json
-*bak
-.vscode
-
-
-# visual studio code
-.history
-*.log
-functions/*
-.temp/**
+# production build
+**/dist/
+/build
+*.tsbuildinfo
 
 # umi
 .umi
 .umi-production
 .umi-test
 
+# misc
+npm-debug.log*
+yarn-error.log
+yarn.lock
+*bak
+*.log
+
+# test coverage
+/coverage
+
 # screenshot
 screenshot
 .firebase
 
-build
-
 # data collection outputs (large files)
 **/data/
+backend/output/
+backend/scratch_*.py
+backend/query_*.py
+docs/generated/
+docs/media/
 *.pdf
+*.docx
+*.xlsx
 *.crdownload
 *.tmp
+
+# env config (keep sample only)
 !backend/config/
 !docs/
+!.github/
 
-# local env file
-backend/.env
-
+# Claude / agent files (local only)
+.claude/
+.agents/
+.learnings/
+MEMORY.md

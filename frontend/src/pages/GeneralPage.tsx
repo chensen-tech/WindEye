@@ -1,985 +1,1150 @@
-﻿import { ReloadOutlined, SearchOutlined, DownOutlined, NodeIndexOutlined, PictureOutlined, FileExcelOutlined } from '@ant-design/icons';
+import {
+  AimOutlined,
+  ClearOutlined,
+  FileExcelOutlined,
+  NodeIndexOutlined,
+  PictureOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { App, Button, Card, Col, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Descriptions, Popover, Tooltip } from 'antd';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import G6 from '@antv/g6';
-import { GENERAL_CONFIG, IMPORTANCE_MAP, FACTOR_TYPE_MAP, RISK_TYPE_MAP, EDGE_STYLE_MAP } from './graphConfig';
-import { barycenterSort, constrainedForceLayout } from './KnowledgeGraph/layouts';
+import {
+  Alert,
+  App,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Descriptions,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  Popover,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Switch,
+  Tag,
+  Tooltip,
+} from 'antd';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  GraphLayoutMode,
+  GraphLayoutSelection,
+  GraphFilterState,
+  GraphViewMode,
+  KGEdge,
+  KGNode,
+} from '@/types/knowledgeGraph';
+import { LAYER_ORDER } from '@/utils/knowledgeGraph';
+import FourLayerGraph, {
+  type FourLayerGraphHandle,
+} from './KnowledgeGraph/components/FourLayerGraph';
+import { useKnowledgeGraph } from './KnowledgeGraph/hooks/useKnowledgeGraph';
+import { filterGraphByMultiLayerTypes } from './KnowledgeGraph/utils/graphFilter';
+import {
+  filterToCenterNeighbors,
+  hideLowDegreeNodes,
+} from './KnowledgeGraph/utils/graphTransform';
+import { computeTypeCountsByLayer } from './KnowledgeGraph/utils/graphStats';
+import { chooseGraphLayoutMode } from './KnowledgeGraph/utils/layouts';
+import {
+  buildAggregateGraph,
+  buildCoreGraph,
+} from './KnowledgeGraph/utils/aggregateGraph';
+import { GENERAL_CONFIG } from './graphConfig';
 
-// 画布配置
-const CANVAS_HEIGHT = 900; // 增加总高度
-const LAYER_GAP = 50;
+type LayerCode = 'Subject' | 'Event' | 'Feature' | 'Regulation';
 
-// 为不同层分配不同的高度
-const LAYER_HEIGHTS = {
-  0: 120,  // 主体层：较小
-  1: 300,  // 事件层：最大（需要容纳三个子层）
-  2: 240,  // 特征层：较大（需要容纳两个子层）
-  3: 120,  // 法规层：较小
+interface LayerStatistics {
+  layer: string;
+  layer_code: LayerCode;
+  node_count: number;
+  node_type_count: number;
+  node_types: string[];
+  node_type_counts: Record<string, number>;
+  rel_count: number;
+  rel_type_count: number;
+  rel_types: string[];
+  rel_type_counts: Record<string, number>;
+  cross_layer_rels?: Record<string, number>;
+}
+
+interface GlobalStatistics {
+  total_nodes: number;
+  total_relationships: number;
+  classified_nodes?: number;
+  unclassified_nodes?: number;
+  layers: LayerStatistics[];
+}
+
+const LAYER_META: Record<LayerCode, { label: string; color: string; background: string }> = {
+  Subject: { label: '主体层', color: '#1677ff', background: '#e6f4ff' },
+  Event: { label: '事件层', color: '#fa8c16', background: '#fff7e6' },
+  Feature: { label: '特征层', color: '#52c41a', background: '#f6ffed' },
+  Regulation: { label: '法规层', color: '#722ed1', background: '#f9f0ff' },
 };
 
-const LAYER_CONFIG = [
-  { name: '主体层', color: '#e6f7ff', labelColor: '#1890ff', index: 0, tag: 'Subject', height: LAYER_HEIGHTS[0] },
-  { name: '事件层', color: '#fff1f0', labelColor: '#ff4d4f', index: 1, tag: 'Event', height: LAYER_HEIGHTS[1] },
-  { name: '特征层', color: '#f6ffed', labelColor: '#52c41a', index: 2, tag: 'Feature', height: LAYER_HEIGHTS[2] },
-  { name: '法规层', color: '#f9f0ff', labelColor: '#722ed1', index: 3, tag: 'Regulation', height: LAYER_HEIGHTS[3] },
+const RELATION_OPTIONS = [
+  'INVEST', 'WORK', 'GUARANTEE', 'CONTROLLER', 'CONTROL', 'MANAGER',
+  'TRUSTEE', 'ISSUE', 'BRANCH', 'CUSTOMER', 'SUE', 'JOINDER',
+  'PARTICIPATE_IN', 'MENTION', 'TRIGGERS', 'REFLECTS', 'CAUSE',
+  'COMPLIES_WITH', 'BELONG',
+].map(value => ({ value, label: value }));
+
+const NODE_TYPE_OPTIONS = Object.entries(GENERAL_CONFIG.nodeStyles)
+  .filter(([value]) => value !== 'Unknown')
+  .map(([value, config]) => ({ value, label: `${config.label} (${value})` }));
+
+const LAYOUT_OPTIONS: Array<{ value: GraphLayoutSelection; label: string }> = [
+  { value: 'auto', label: '自动布局' },
+  { value: 'aggregate', label: '类型聚合' },
+  { value: 'cascade', label: '逐层定向级联' },
+  { value: 'radial', label: '中心放射' },
+  { value: 'semantic-force', label: '四层语义分布' },
+  { value: 'community', label: '社区聚类' },
+  { value: 'path-focus', label: '路径优先' },
 ];
 
-const NODE_STYLE_CONFIG = GENERAL_CONFIG.nodeStyles;
-const RELATION_LABEL_MAP = GENERAL_CONFIG.relationLabels;
-const PROPERTY_MAP = GENERAL_CONFIG.propertyMap;
+const VIEW_OPTIONS: Array<{ value: GraphViewMode; label: string }> = [
+  { value: 'aggregate', label: '聚合视图' },
+  { value: 'core', label: '核心视图' },
+  { value: 'full', label: '完整视图' },
+  { value: 'path', label: '路径视图' },
+];
 
-const NODE_TYPE_OPTIONS = Object.keys(NODE_STYLE_CONFIG)
-  .filter(k => k !== 'Unknown')
-  .map(k => ({ value: k, label: NODE_STYLE_CONFIG[k].label }));
-
-// 辅助函数
-const parseRiskJson = (jsonStr: string) => {
-  try {
-    let fixedStr = jsonStr.trim();
-    if (!fixedStr.startsWith('[')) fixedStr = '[' + fixedStr.replace(/\}\s*\{/g, '},{') + ']';
-    const parsed = JSON.parse(fixedStr);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch (e) {
-    const matches = jsonStr.match(/\{[^{}]+\}/g);
-    return matches ? matches.map(m => { try { return JSON.parse(m) } catch { return null } }).filter(Boolean) : [];
-  }
+const EMPTY_TYPES_BY_LAYER: Record<LayerCode, string[]> = {
+  Subject: [],
+  Event: [],
+  Feature: [],
+  Regulation: [],
 };
 
-const safeParseCount = (jsonStr: string) => {
-  try { return parseRiskJson(jsonStr).length; } catch { return 0; }
+const DEFAULT_FILTER_STATE: GraphFilterState = {
+  selectedLayers: [],
+  selectedNodeTypesByLayer: { ...EMPTY_TYPES_BY_LAYER },
+  selectedEdgeTypesByLayer: { ...EMPTY_TYPES_BY_LAYER },
+  selectedEdgeTypes: [],
+  filterMode: 'highlight',
 };
 
-const getYByLayer = (layerIndex: number) => {
-  let y = 0;
-  for (let i = 0; i < layerIndex; i++) {
-    y += LAYER_HEIGHTS[i as keyof typeof LAYER_HEIGHTS] + LAYER_GAP;
-  }
-  return y + LAYER_HEIGHTS[layerIndex as keyof typeof LAYER_HEIGHTS] / 2;
-};
-
-const drawSwimlanes = (graph: any, width: number) => {
-  const group = graph.get('group');
-  let currentY = 0;
-  
-  LAYER_CONFIG.forEach((cfg) => {
-    const layerHeight = cfg.height;
-    
-    group.addShape('rect', {
-      attrs: { x: 0, y: currentY, width: width, height: layerHeight, fill: cfg.color, opacity: 0.5 },
-      name: 'lane-background', zIndex: -10,
-    });
-    
-    if (cfg.index < 3) {
-      group.addShape('path', {
-        attrs: {
-          path: [['M', 0, currentY + layerHeight + LAYER_GAP / 2], ['L', width, currentY + layerHeight + LAYER_GAP / 2]],
-          stroke: '#e8e8e8', lineDash: [5, 5], lineWidth: 1,
-        },
-        name: 'lane-divider', zIndex: -9,
-      });
-    }
-    
-    currentY += layerHeight + LAYER_GAP;
-  });
-  group.sort();
-};
-
-const CustomStatistic = ({ title, value }: { title: string; value: number }) => (
-  <div style={{ padding: '2px 0', textAlign: 'center' }}>
-    <div style={{ fontSize: '14px', color: 'rgba(0,0,0,0.65)', marginBottom: 4, fontWeight: 500 }}>{title}</div>
-    <div style={{ fontSize: '24px', fontWeight: '600', color: '#000', lineHeight: 1.2 }}>{value.toLocaleString()}</div>
+const CountBlock: React.FC<{
+  title: string;
+  value: number;
+  align?: 'left' | 'center';
+  size?: number;
+}> = ({ title, value, align = 'center', size = 23 }) => (
+  <div style={{ textAlign: align, minWidth: 92 }}>
+    <div style={{ color: 'rgba(0,0,0,0.58)', fontSize: 13, marginBottom: 4 }}>{title}</div>
+    <div style={{ fontSize: size, lineHeight: '32px', fontWeight: 650 }}>
+      {value.toLocaleString()}
+    </div>
   </div>
 );
 
+const StatisticsScope: React.FC<{
+  title: string;
+  nodeCount: number;
+  edgeCount: number;
+  description: React.ReactNode;
+  accent?: string;
+  tag?: React.ReactNode;
+}> = ({ title, nodeCount, edgeCount, description, accent = '#1677ff', tag }) => (
+  <div style={{
+    height: '100%',
+    minHeight: 142,
+    padding: '18px 20px',
+    border: '1px solid #f0f0f0',
+    borderTop: `3px solid ${accent}`,
+    borderRadius: 8,
+    background: '#fff',
+  }}>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 14,
+    }}>
+      <span style={{ fontWeight: 600, fontSize: 15 }}>{title}</span>
+      {tag}
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 32 }}>
+      <CountBlock title="节点" value={nodeCount} align="left" size={24} />
+      <CountBlock title="关系" value={edgeCount} align="left" size={24} />
+    </div>
+    <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 12, minHeight: 18 }}>
+      {description}
+    </div>
+  </div>
+);
+
+const TypeList: React.FC<{
+  counts: Record<string, number>;
+  currentCounts: Record<string, number>;
+  selected: string[];
+  accent: string;
+  unit: '节点' | '关系';
+  onToggle: (type: string) => void;
+  onClear: () => void;
+}> = ({ counts, currentCounts, selected, accent, unit, onToggle, onClear }) => {
+  const entries = Object.entries(counts).sort((left, right) => right[1] - left[1]);
+
+  return (
+    <div style={{
+      width: 320,
+      maxWidth: 'calc(100vw - 72px)',
+      maxHeight: 280,
+      overflowY: 'auto',
+    }}>
+      {entries.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无类型数据" />
+      ) : (
+        <>
+          <Button
+            type={selected.length === 0 ? 'primary' : 'default'}
+            block
+            onClick={(event) => {
+              event.stopPropagation();
+              onClear();
+            }}
+            style={{
+              height: 32,
+              marginBottom: 4,
+              ...(selected.length === 0 ? { background: accent, borderColor: accent } : {}),
+            }}
+          >
+            不限制{unit}类型
+          </Button>
+          {entries.map(([type, count]) => {
+            const checked = selected.includes(type);
+            const current = currentCounts[type] || 0;
+            return (
+              <div
+                key={type}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggle(type);
+                }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '20px minmax(0, 1fr) auto',
+                  alignItems: 'center',
+                  gap: 8,
+                  minHeight: 44,
+                  padding: '5px 8px',
+                  marginBottom: 2,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  background: checked ? `${accent}12` : 'transparent',
+                  border: checked ? `1px solid ${accent}55` : '1px solid transparent',
+                }}
+              >
+                <Checkbox checked={checked} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{
+                    display: 'block',
+                    textAlign: 'left',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    fontWeight: checked ? 600 : 400,
+                    color: checked ? accent : undefined,
+                  }}>
+                    {type}
+                  </span>
+                  <span style={{ display: 'block', color: '#8c8c8c', fontSize: 11 }}>
+                    全库 {count.toLocaleString()}｜当前 {current.toLocaleString()}
+                  </span>
+                </span>
+                <span style={{ color: current > 0 ? '#595959' : '#bfbfbf', fontSize: 12 }}>
+                  {current}
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+};
+
 const GeneralPage: React.FC = () => {
-  const [form] = Form.useForm();
   const { message } = App.useApp();
-  
-  const [graphData, setGraphData] = useState<{ nodes: any[]; edges?: any[]; links?: any[] }>({ nodes: [], edges: [], links: [] });
-  const [loading, setLoading] = useState<boolean>(true);
-  const [graphError, setGraphError] = useState<string | null>(null);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<any | null>(null);
-  const [layerStats, setLayerStats] = useState<{ total: number, total_relationships?: number, details: Array<{label: string, value: number, type: string}> }>({ total: 0, total_relationships: 0, details: [] });
-  const [detailedStats, setDetailedStats] = useState<Array<{
-    layer: string;
-    layer_code: string;
-    node_count: number;
-    node_type_count: number;
-    node_types: string[];
-    rel_count: number;
-    rel_type_count: number;
-    rel_types: string[];
-  }>>([]);
-  const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [detailData, setDetailData] = useState<any[]>([]);
-  const [detailTitle, setDetailTitle] = useState("");
-  const [expanding, setExpanding] = useState<boolean>(false);
-  const [filterLayer, setFilterLayer] = useState<string | null>(null);
-  const [showDetailedStats, setShowDetailedStats] = useState<boolean>(false);
+  const [form] = Form.useForm();
+  const graphRef = useRef<FourLayerGraphHandle>(null);
+  const [globalStats, setGlobalStats] = useState<GlobalStatistics | null>(null);
+  const [selectedNode, setSelectedNode] = useState<KGNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<KGEdge | null>(null);
+  const [filterState, setFilterState] = useState<GraphFilterState>(DEFAULT_FILTER_STATE);
+  const [openTypePopover, setOpenTypePopover] = useState<string | null>(null);
+  const [layoutSelection, setLayoutSelection] = useState<GraphLayoutSelection>('auto');
+  const [viewMode, setViewMode] = useState<GraphViewMode>('core');
+  const [expandedAggregateGroups, setExpandedAggregateGroups] = useState<Set<string>>(new Set());
+  const [centerOverrideId, setCenterOverrideId] = useState<string>();
+  const [onlyCenterNeighbors, setOnlyCenterNeighbors] = useState(false);
+  const [hideIsolated, setHideIsolated] = useState(false);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<any>(null);
+  const {
+    nodes,
+    edges,
+    matchedNodes,
+    triples,
+    summary,
+    warnings,
+    traceId,
+    graphError,
+    loading,
+    initialized,
+    setGraphError,
+    loadInitialGraph,
+    search,
+    expand,
+    clear,
+  } = useKnowledgeGraph();
 
-  const loadData = async (url: string, isSearch: boolean) => {
-    setLoading(true);
-    setGraphError(null);
+  const loadGlobalStatistics = useCallback(async () => {
     try {
-      const response = await fetch(url);
-      const result = await response.json();
-      if (result.error) {
-        setGraphError(result.error);
-        setGraphData({ nodes: [], edges: [], links: [] });
-        return;
-      }
-      if (!result.nodes || !Array.isArray(result.nodes)) {
-        setGraphError('后端返回数据格式异常，缺少 nodes 字段');
-        setGraphData({ nodes: [], edges: [], links: [] });
-        return;
-      }
-      if (isSearch && result.nodes.length === 0) {
-        message.warning("未找到相关的关联主体");
-        setGraphData({ nodes: [], edges: [], links: [] });
-      } else {
-        const rawEdges = result.edges || result.links || [];
-        const dataWithLinks = { ...result, links: Array.isArray(rawEdges) ? rawEdges : [] };
-        setGraphData(dataWithLinks);
-        console.log('Graph data loaded:', { nodes: dataWithLinks.nodes?.length, links: dataWithLinks.links?.length });
-        if (isSearch) message.success(`找到 ${result.nodes.length} 个关联节点`);
-      }
-    } catch (err) {
-      setGraphError('后端服务连接失败，请检查服务是否启动');
-      setGraphData({ nodes: [], edges: [], links: [] });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadFullGraph = () => {
-    setLoading(true);
-    setFilterLayer(null);
-    loadData('/api/v1/graph/data?limit=100', false).finally(() => setLoading(false));
-  };
-
-  const loadLayerFilter = (layer: string) => {
-    if (filterLayer === layer) {
-      loadFullGraph();
-      return;
-    }
-    setLoading(true);
-    setFilterLayer(layer);
-    loadData(`/api/v1/graph/data?limit=100&layer=${layer}`, false).finally(() => setLoading(false));
-  };
-
-  const loadLayerStatistics = async () => {
-    try {
-      // Use unified summary-stats endpoint (B1) for total counts
       const response = await fetch('/api/v1/graph/summary-stats');
       const data = await response.json();
-      if (data && data.total_nodes !== undefined) {
-        setLayerStats({
-          total: data.total_nodes,
-          total_relationships: data.total_relationships,
-          details: data.layers ? data.layers.map((l: any) => ({
-            label: l.layer,
-            value: l.node_count,
-            type: l.layer_code,
-          })) : [],
-        });
+      if (!response.ok || data?.error) {
+        throw new Error(data?.error || '全库统计加载失败');
       }
-    } catch {
-      // Fallback: use the enhanced /statistics?layer=all (B3)
-      try {
-        const response = await fetch('/api/v1/graph/statistics');
-        const data = await response.json();
-        if (data && data.total !== undefined && Array.isArray(data.details)) {
-          setLayerStats({ total: data.total, total_relationships: data.total_relationships || 0, details: data.details });
-        }
-      } catch (err) { console.error('加载层级统计失败:', err); }
+      setGlobalStats(data);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '全库统计加载失败');
     }
-  };
-
-  const loadDetailedStatistics = async () => {
-    try {
-      const response = await fetch('/api/v1/graph/statistics');
-      const result = await response.json();
-      if (result.success && result.layers) {
-        setDetailedStats(result.layers);
-      }
-    } catch (err) { console.error('加载详细统计失败:', err); }
-  };
-
-  var handleExportPNG = function () {
-    if (graphRef.current) {
-      graphRef.current.downloadFullImage('knowledge-graph-' + Date.now(), 'image/png', {
-        backgroundColor: '#fff',
-        padding: 20,
-      });
-      message.success('图谱已导出为 PNG');
-    }
-  };
-
-  var handleExportCSV = function () {
-    var headers = '层级,节点数,节点类型数,关系数,关系类型数\r\n';
-    var rows = detailedStats
-      .map(function (l) {
-        return l.layer + ',' + l.node_count + ',' + l.node_type_count + ',' + l.rel_count + ',' + l.rel_type_count;
-      })
-      .join('\r\n');
-    var csv = '﻿' + headers + rows;
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'knowledge-graph-stats-' + Date.now() + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-    message.success('统计数据已导出为 CSV');
-  };
-
-  const handleSearch = (values: any) => {
-    const { keyword, layers, searchLayer } = values;
-    const params = new URLSearchParams();
-    if (keyword) params.append('q', keyword.trim());
-    if (layers) params.append('depth', layers.toString());
-    if (searchLayer && searchLayer !== 'all') params.append('layer', searchLayer);
-    params.append('limit', '200');
-
-    if (!keyword) {
-      loadFullGraph();
-    } else {
-      loadData(`/api/v1/graph/search-all?${params.toString()}`, true);
-    }
-  };
-
-  const processedData = useMemo(() => {
-    if (!graphData || !graphData.nodes || !Array.isArray(graphData.nodes) || !graphData.nodes.length) {
-      return { nodes: [], links: [] };
-    }
-
-    const nodes = graphData.nodes.map((node: any) => {
-        let typeKey = 'Unknown';
-        let layerIdx = 0;
-        const labels = node.labels || [];
-        const props = node.properties || {};
-        
-        if (labels.includes('Subject')) {
-          layerIdx = 0;
-          typeKey = labels.includes('COMPANY') ? 'COMPANY' : 'PERSON';
-        } else if (labels.includes('Event')) {
-          layerIdx = 1;
-          
-          // 判断是否为TIME节点
-          if (labels.includes('TIME')) {
-            typeKey = 'TIME';
-          } else {
-            // 区分主事件和子事件
-            const nodeName = props.name || props.title || '';
-            const nodeType = props.node_type || '';
-            const eventType = props.event_type || '';
-            
-            // 通过多种方式判断是否为子事件
-            if (
-              props.parent_event ||  // 有父事件属性
-              nodeName.includes('子事件') ||  // 名称包含"子事件"
-              nodeType.includes('子') ||  // 节点类型包含"子"
-              eventType.includes('子') ||  // 事件类型包含"子"
-              props.is_sub_event === true ||  // 明确标记为子事件
-              props.level === 'sub'  // 层级标记为sub
-            ) {
-              typeKey = 'SUB_EVENT';
-            } else {
-              typeKey = 'EVENT';
-            }
-          }
-        } else if (labels.includes('Feature')) {
-          layerIdx = 2;
-          typeKey = labels.includes('RiskFeature') ? 'RiskFeature' : 'RiskFactor';
-        } else if (labels.includes('Regulation')) {
-          layerIdx = 3;
-          typeKey = 'Action';
-        }
-        
-        const finalTypeKey = node.typeKey || typeKey;
-        const nodeStyle = NODE_STYLE_CONFIG[finalTypeKey] || NODE_STYLE_CONFIG['Unknown'];
-        
-        // 根据节点类型选择显示的属性
-        let nodeName = '未知';
-        if (finalTypeKey === 'TIME') {
-          // TIME节点显示id属性
-          nodeName = props.id || props.time || props.name || '未知时间';
-        } else if (finalTypeKey === 'RiskFactor') {
-          // 风险因子显示e_id属性
-          nodeName = props.e_id || props.factor_nm || props.name || '未知因子';
-        } else if (finalTypeKey === 'RiskFeature') {
-          // 风险特征显示id属性
-          nodeName = props.id || props.feature_nm || props.name || '未知特征';
-        } else {
-          // 其他节点显示常规属性
-          nodeName = props.name || props.COMPANY_NM || props.title || '未知';
-        }
-
-        return {
-          ...node,
-          id: String(node.id),
-          name: nodeName,
-          label: nodeName.length > 6 ? `${nodeName.substring(0, 6)}...` : nodeName,
-          fullLabel: nodeName,
-          typeKey: finalTypeKey,
-          layer: layerIdx,
-          color: nodeStyle.color,
-          levelName: nodeStyle.label,
-          y: getYByLayer(layerIdx),
-          style: { fill: nodeStyle.color, stroke: '#fff', lineWidth: 2, r: 30, cursor: 'pointer' },
-          labelCfg: { 
-            position: 'center', 
-            style: { 
-              fill: '#fff', 
-              fontSize: 12, 
-              fontWeight: 'bold',
-              textAlign: 'center',
-              textBaseline: 'middle'
-            } 
-          },
-        };
-      }).filter(Boolean);
-
-    var processed = { nodes: nodes, links: [] as any[] };
-
-    var rawLinks = graphData.links || graphData.edges || [];
-    var linksArr = Array.isArray(rawLinks) ? rawLinks : [];
-    processed.links = linksArr.map(function(link: any) {
-      var sourceId = String(link.source || link.sourceId || '');
-      var targetId = String(link.target || link.targetId || '');
-      var sourceNode = nodes.find(function(n) { return n.id === sourceId; });
-      var targetNode = nodes.find(function(n) { return n.id === targetId; });
-      var edgeColor = '#d9d9d9';
-      var edgeWidth = 1.5;
-      if (sourceNode && targetNode) {
-        var key = sourceNode.layer + '-' + targetNode.layer;
-        var styleConfig = EDGE_STYLE_MAP[key];
-        if (styleConfig) {
-          edgeColor = styleConfig.stroke;
-          edgeWidth = styleConfig.lineWidth;
-        }
-      }
-      return {
-        ...link,
-        id: sourceId + '-' + targetId + '-' + (link.label || 'default'),
-        source: sourceId,
-        target: targetId,
-        label: RELATION_LABEL_MAP[link.label] || link.label || '关联',
-        type: 'line',
-        style: { endArrow: true, stroke: edgeColor, lineWidth: edgeWidth },
-        labelCfg: { autoRotate: true, refY: -8, style: { fill: edgeColor, fontSize: 10 } },
-      };
-    }).filter(function(link: any) { return link !== null; });
-
-    return processed;
-  }, [graphData]);
+  }, [message]);
 
   useEffect(() => {
-    loadFullGraph();
-    loadLayerStatistics();
-    loadDetailedStatistics();
-    return () => {
-      if (graphRef.current) graphRef.current.destroy();
-    };
+    void loadGlobalStatistics();
+  }, [loadGlobalStatistics]);
+
+  const currentTypeCounts = useMemo(
+    () => computeTypeCountsByLayer(nodes, edges),
+    [nodes, edges],
+  );
+
+  const multiLayerFilter = useMemo(
+    () => filterGraphByMultiLayerTypes(
+      nodes,
+      edges,
+      filterState.selectedNodeTypesByLayer,
+      filterState.selectedEdgeTypes,
+      filterState.filterMode,
+      filterState.selectedLayers,
+    ),
+    [nodes, edges, filterState],
+  );
+
+  const visibleGraph = useMemo(() => ({
+    nodes: multiLayerFilter.visibleNodes,
+    edges: multiLayerFilter.visibleEdges,
+  }), [multiLayerFilter]);
+
+  const centerNodeId = useMemo(
+    () => centerOverrideId
+      || summary.centerNodeId
+      || nodes.find(node => node.isCenter)?.id
+      || nodes.find(node => node.isMatched)?.id,
+    [centerOverrideId, summary.centerNodeId, nodes],
+  );
+
+  const displayGraph = useMemo(() => {
+    let result = visibleGraph;
+    if (onlyCenterNeighbors) {
+      result = filterToCenterNeighbors(result.nodes, result.edges, centerNodeId);
+    }
+    if (hideIsolated) {
+      if (viewMode === 'aggregate') {
+        // 聚合节点代表一个类型分组，不因单个成员孤立而隐藏。
+      } else {
+      result = hideLowDegreeNodes(result.nodes, result.edges, 1);
+      }
+    }
+    if (viewMode === 'aggregate') {
+      const aggregate = buildAggregateGraph(
+        result.nodes,
+        result.edges,
+        expandedAggregateGroups,
+        20,
+      );
+      return { ...aggregate, limited: aggregate.foldedNodeCount > 0 };
+    }
+    if (viewMode === 'core') {
+      const core = buildCoreGraph(result.nodes, result.edges, centerNodeId, 150);
+      return {
+        ...core,
+        limited: core.nodes.length < result.nodes.length,
+        foldedNodeCount: Math.max(0, result.nodes.length - core.nodes.length),
+      };
+    }
+    return { ...result, limited: false, foldedNodeCount: 0 };
+  }, [
+    visibleGraph,
+    onlyCenterNeighbors,
+    hideIsolated,
+    centerNodeId,
+    viewMode,
+    expandedAggregateGroups,
+  ]);
+
+  const hasCommunities = useMemo(
+    () => displayGraph.nodes.some(node =>
+      node.communityId !== undefined
+      || node.properties?.communityId !== undefined
+      || node.properties?.community_id !== undefined
+      || node.properties?._communityId !== undefined),
+    [displayGraph.nodes],
+  );
+
+  const resolvedLayoutMode: GraphLayoutMode = useMemo(
+    () => {
+      if (layoutSelection !== 'auto') return layoutSelection;
+      if (viewMode === 'aggregate') return 'aggregate';
+      if (viewMode === 'path') return 'path-focus';
+      if (viewMode === 'core' && displayGraph.nodes.length <= 50 && centerNodeId) return 'radial';
+      if (viewMode === 'core' || viewMode === 'full') return 'semantic-force';
+      return chooseGraphLayoutMode({
+        nodes: displayGraph.nodes,
+        edges: displayGraph.edges,
+        centerNodeId,
+        hasCommunities,
+      });
+    },
+    [layoutSelection, viewMode, displayGraph.nodes, displayGraph.edges, centerNodeId, hasCommunities],
+  );
+
+  const handleSearch = useCallback(async (values: any) => {
+    const keyword = String(values.keyword || '').trim();
+    if (!keyword) {
+      message.info('请输入节点名称后搜索；刷新按钮可恢复默认子图');
+      return;
+    }
+    try {
+      const response = await search({
+        query: keyword,
+        layer: values.searchLayer || 'all',
+        depth: values.depth || 2,
+        type: values.nodeType || 'all',
+        relationWhitelist: values.relationWhitelist || [],
+        includeProperties: true,
+        includeCrossLayer: true,
+        outputFormat: 'both',
+        deduplicate: true,
+        traversalMode: 'cascade',
+      });
+      setFilterState(DEFAULT_FILTER_STATE);
+      setViewMode((response.nodes || []).length > 100 ? 'aggregate' : 'core');
+      setExpandedAggregateGroups(new Set());
+      setCenterOverrideId(undefined);
+      setSelectedEdge(null);
+      setOpenTypePopover(null);
+      message.success('跨层图谱搜索完成');
+    } catch {
+      // Hook 已写入 graphError。
+    }
+  }, [message, search]);
+
+  const handleExpand = useCallback(async (node: KGNode) => {
+    const values = form.getFieldsValue();
+    try {
+      await expand(node.id, {
+        depth: values.depth || 1,
+        limit: values.limit || 500,
+        relationWhitelist: values.relationWhitelist || [],
+        layerWhitelist: [...LAYER_ORDER],
+        includeCrossLayer: true,
+        includeProperties: true,
+      });
+      message.success(`已展开“${node.name}”的关联子图`);
+    } catch {
+      // Hook 已写入 graphError。
+    }
+  }, [expand, form, message]);
+
+  const handleRefresh = useCallback(async () => {
+    setFilterState(DEFAULT_FILTER_STATE);
+    setOpenTypePopover(null);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    setCenterOverrideId(undefined);
+    setExpandedAggregateGroups(new Set());
+    setViewMode('core');
+    await Promise.all([loadInitialGraph(), loadGlobalStatistics()]);
+  }, [loadInitialGraph, loadGlobalStatistics]);
+
+  const handleClear = useCallback(() => {
+    form.resetFields();
+    clear();
+    setFilterState(DEFAULT_FILTER_STATE);
+    setOpenTypePopover(null);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    setCenterOverrideId(undefined);
+    setExpandedAggregateGroups(new Set());
+    setViewMode('core');
+  }, [clear, form]);
+
+  const toggleAggregateGroup = useCallback((node: KGNode) => {
+    if (!node.isAggregate || !node.aggregateKey) return false;
+    setExpandedAggregateGroups((current) => {
+      const next = new Set(current);
+      if (next.has(node.aggregateKey!)) next.delete(node.aggregateKey!);
+      else next.add(node.aggregateKey!);
+      return next;
+    });
+    return true;
   }, []);
 
-  useEffect(() => {
-    if (!containerRef.current || !processedData.nodes.length) return;
-    if (graphRef.current) graphRef.current.destroy();
+  const handleGraphNodeClick = useCallback((node: KGNode) => {
+    if (toggleAggregateGroup(node)) return;
+    setSelectedEdge(null);
+    setSelectedNode(node);
+  }, [toggleAggregateGroup]);
 
-    var nodeCount = processedData.nodes.length;
-    var width = containerRef.current.scrollWidth || window.innerWidth;
-    var graph = new G6.Graph({
-      container: containerRef.current,
-      width: width,
-      height: CANVAS_HEIGHT,
-      fitView: true,
-      fitViewPadding: 50,
-      renderer: 'canvas',
-      animate: nodeCount < 200,
-      layout: null as any,
-      defaultNode: { type: 'circle', size: 60, labelCfg: { position: 'center' } },
-      defaultEdge: { type: 'line', style: { endArrow: true, stroke: '#e2e2e2' }, labelCfg: { autoRotate: true, refY: 10 } },
-      modes: {
-        default: [
-          {
-            type: 'drag-canvas',
-            enableOptimize: true,  // 开启性能优化
-            scalableRange: 0.1,    // 缩放范围
-          },
-          {
-            type: 'zoom-canvas',
-            sensitivity: 2,         // 缩放灵敏度
-            minZoom: 0.5,          // 最小缩放比例
-            maxZoom: 3,            // 最大缩放比例
-          },
-          'drag-node',
-          'click-select'
-        ]
-      },
-      plugins: [
-        new G6.Tooltip({
-          offsetX: 10,
-          offsetY: 10,
-          itemTypes: ['node'],
-          getContent: (e) => {
-            const model = e?.item?.getModel();
-            if (!model) return '';
-            
-            const labels = model.labels || [];
-            const hasEventLabels = labels.includes('EVENT') && labels.includes('Event');
-            
-            if (hasEventLabels) {
-              const textContent = model.properties?.text || '';
-              if (textContent) {
-                return `<div style="padding: 12px; background: rgba(0, 0, 0, 0.85); color: #fff; border-radius: 4px; max-width: 300px; word-wrap: break-word; font-size: 13px; line-height: 1.5; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);">${textContent}</div>`;
-              }
-            }
-            return '';
-          },
-          shouldBegin: (e) => {
-            const model = e?.item?.getModel();
-            if (!model) return false;
-            const labels = model.labels || [];
-            const hasEventLabels = labels.includes('EVENT') && labels.includes('Event');
-            return hasEventLabels && !!model.properties?.text;
-          },
-        }),
-      ],
+  const handleGraphNodeDoubleClick = useCallback((node: KGNode) => {
+    if (toggleAggregateGroup(node)) return;
+    void handleExpand(node);
+  }, [handleExpand, toggleAggregateGroup]);
+
+  const handleGraphEdgeClick = useCallback((edge: KGEdge) => {
+    setSelectedNode(null);
+    setSelectedEdge(edge);
+  }, []);
+
+  const exportCSV = useCallback(() => {
+    const rows = [
+      ['口径', '指标', '数量'],
+      ['全库', '节点', globalStats?.total_nodes || 0],
+      ['全库', '关系', globalStats?.total_relationships || 0],
+      ['当前子图', '节点', nodes.length],
+      ['当前子图', '关系', edges.length],
+    ];
+    const csv = `\uFEFF${rows.map(row => row.join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `knowledge-graph-stats-${Date.now()}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [globalStats, nodes.length, edges.length]);
+
+  const toggleLayer = (layer: LayerCode) => {
+    setOpenTypePopover(null);
+    setFilterState(current => ({
+      ...current,
+      selectedLayers: current.selectedLayers.includes(layer)
+        ? current.selectedLayers.filter(item => item !== layer)
+        : [...current.selectedLayers, layer],
+    }));
+  };
+
+  const toggleNodeType = (layer: LayerCode, type: string) => {
+    const currentCount = currentTypeCounts[layer].nodeTypes[type] || 0;
+    setFilterState(current => {
+      const selected = current.selectedNodeTypesByLayer[layer];
+      return {
+        ...current,
+        selectedNodeTypesByLayer: {
+          ...current.selectedNodeTypesByLayer,
+          [layer]: selected.includes(type)
+            ? selected.filter(item => item !== type)
+            : [...selected, type],
+        },
+      };
     });
+    if (currentCount === 0) {
+      message.info('当前子图中暂无该类型节点，可提高穿透深度或输入该类型关键词进行检索');
+    }
+  };
 
-    // 按层级分组节点
-    const layerNodesMap: Record<number, any[]> = {};
-
-    processedData.nodes.forEach(node => {
-      const layer = node.layer || 0;
-      if (!layerNodesMap[layer]) layerNodesMap[layer] = [];
-      layerNodesMap[layer].push(node);
+  const toggleEdgeType = (layer: LayerCode, type: string) => {
+    setFilterState(current => {
+      const selectedByLayer = current.selectedEdgeTypesByLayer[layer];
+      const nextByLayer = {
+        ...current.selectedEdgeTypesByLayer,
+        [layer]: selectedByLayer.includes(type)
+          ? selectedByLayer.filter(item => item !== type)
+          : [...selectedByLayer, type],
+      };
+      return {
+        ...current,
+        selectedEdgeTypesByLayer: nextByLayer,
+        selectedEdgeTypes: [...new Set(Object.values(nextByLayer).flat())],
+      };
     });
+  };
 
-    // ─── 位置计算：三阶段统一管线 ──────────────────────────────
-    const leftMargin = 150;
-    const availableWidth = width - leftMargin * 2;
-    const layerCenterX = leftMargin + availableWidth / 2;
-    var nodePositions = new Map<string, { x: number; y: number }>();
+  const clearTypeFilters = () => {
+    setOpenTypePopover(null);
+    setFilterState(DEFAULT_FILTER_STATE);
+  };
 
-    // 根据 typeKey 返回 sub-layer Y
-    var getAssignedY = function (node: any): number {
-      var baseY = 0;
-      for (var li = 0; li < (node.layer || 0); li++) {
-        baseY += LAYER_HEIGHTS[li as keyof typeof LAYER_HEIGHTS] + LAYER_GAP;
-      }
-      var h = LAYER_HEIGHTS[(node.layer || 0) as keyof typeof LAYER_HEIGHTS];
-      switch (node.typeKey) {
-        case 'EVENT':       return baseY + h * 0.17;
-        case 'SUB_EVENT':   return baseY + h * 0.50;
-        case 'TIME':        return baseY + h * 0.83;
-        case 'RiskFactor':  return baseY + h * 0.25;
-        case 'RiskFeature': return baseY + h * 0.75;
-        default:            return baseY + h / 2;
-      }
-    };
-
-    // --- Phase 1: 统一分配 Y（typeKey → sub-layer）+ even-spacing X 作为预热起点 ---
-    [0, 1, 2, 3].forEach(function (layer) {
-      var nodes = layerNodesMap[layer] || [];
-      nodes.forEach(function (node, i) {
-        var total = nodes.length;
-        var spacing = total > 1 ? availableWidth / (total + 1) : 0;
-        nodePositions.set(node.id, {
-          x: total > 1 ? leftMargin + (i + 1) * spacing : layerCenterX,
-          y: getAssignedY(node),
-        });
-      });
-    });
-
-    // --- Phase 2: 逐层质心排序，减少跨层边交叉 ---
-    // 从 Layer 1（事件层，连接最密集）开始，向上下扩散
-    var allIdNodes = processedData.nodes.map(function (n) { return { id: n.id }; });
-    var linkObjs = processedData.links.map(function (l) { return { source: String(l.source), target: String(l.target) }; });
-
-    [1, 0, 2, 3].forEach(function (layer) {
-      var layerNodes = (layerNodesMap[layer] || []).slice();
-      if (layerNodes.length === 0) return;
-      var layerIds = new Set(layerNodes.map(function (n) { return n.id; }));
-      var adjacentNodes = allIdNodes.filter(function (n) { return !layerIds.has(n.id); });
-
-      var sorted = barycenterSort(
-        layerNodes.map(function (n) { return { id: n.id }; }),
-        adjacentNodes,
-        linkObjs
-      );
-
-      sorted.forEach(function (sortedNode, i) {
-        var total = sorted.length;
-        var spacing = total > 1 ? availableWidth / (total + 1) : 0;
-        var pos = nodePositions.get(sortedNode.id);
-        if (pos) pos.x = total > 1 ? leftMargin + (i + 1) * spacing : layerCenterX;
-      });
-    });
-
-    // --- Phase 3: 约束力导向精炼（Y 锁定，X 自由）---
-    var forceNodes = processedData.nodes.map(function (n) {
-      var pos = nodePositions.get(n.id) || { x: layerCenterX, y: getAssignedY(n) };
-      return { id: n.id, x: pos.x, y: pos.y, assignedY: pos.y };
-    });
-    var forceEdges = processedData.links.map(function (l) {
-      return { source: String(l.source), target: String(l.target) };
-    });
-
-    constrainedForceLayout(forceNodes, forceEdges, layerCenterX, {
-      repulsionStrength: 5000,
-      attractionStrength: 0.01,
-      gravity: 0.03,
-      maxIterations: 80,
-    });
-
-    // 构建最终 nodesWithPosition
-    var forcePosMap = new Map<string, { x: number; y: number }>();
-    forceNodes.forEach(function (n) { forcePosMap.set(n.id, { x: n.x, y: n.y }); });
-
-    var nodesWithPosition = processedData.nodes.map(function (node) {
-      var pos = forcePosMap.get(node.id);
-      if (pos) return Object.assign({}, node, { x: pos.x, y: pos.y });
-      var fb = nodePositions.get(node.id);
-      return Object.assign({}, node, { x: fb ? fb.x : layerCenterX, y: fb ? fb.y : getAssignedY(node) });
-    });
-
-    graph.data({ nodes: nodesWithPosition, edges: processedData.links });
-    graph.render();
-    drawSwimlanes(graph, width);
-
-    graph.on('node:click', (evt) => {
-      const item = evt.item;
-      const model = item?.getModel();
-      if (!model) return;
-      setSelectedNode(model);
-      setDrawerVisible(true);
-    });
-
-    // Double-click to expand neighbor nodes
-    graph.on('node:dblclick', async (evt) => {
-      const item = evt.item;
-      const model = item?.getModel();
-      if (!model || expanding) return;
-
-      setExpanding(true);
-      try {
-        const nodeId = model.id;
-        const response = await fetch(`/api/v1/graph/expand/${nodeId}?depth=1&limit=100`);
-        const result = await response.json();
-
-        if (result.nodes && result.nodes.length > 0) {
-          // Merge new nodes and edges with existing graph data
-          const existingNodeIds = new Set(processedData.nodes.map((n: any) => n.id));
-          const existingEdgeIds = new Set(processedData.links.map((l: any) => l.id));
-
-          const newNodes = result.nodes.filter((n: any) => !existingNodeIds.has(n.id));
-          const newEdges = (result.edges || []).filter((e: any) => {
-            const eid = `${e.source || e.sourceId}-${e.target || e.targetId}-${e.label || 'default'}`;
-            return !existingEdgeIds.has(eid);
-          });
-
-          if (newNodes.length > 0 || newEdges.length > 0) {
-            setGraphData((prev: any) => ({
-              nodes: [...prev.nodes, ...newNodes],
-              edges: [...(prev.edges || []), ...newEdges],
-              links: [...(prev.links || prev.edges || []), ...newEdges],
-            }));
-            message.success(`展开 ${newNodes.length} 个新节点，${newEdges.length} 条新关系`);
-          } else {
-            message.info('未发现新的关联节点');
-          }
-        }
-      } catch (err) {
-        message.error('展开子图失败');
-      } finally {
-        setExpanding(false);
-      }
-    });
-
-    graphRef.current = graph;
-    return () => { graph.destroy(); };
-  }, [processedData]);
+  const hasTypeFilters = filterState.selectedLayers.length > 0
+    || filterState.selectedEdgeTypes.length > 0
+    || Object.values(filterState.selectedNodeTypesByLayer).some(types => types.length > 0);
 
   return (
     <PageContainer title="四层知识图谱检索">
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={[16, 0]} align="middle" style={{ padding: '6px 0', marginBottom: 16 }}>
-          <Col flex="1" style={{ cursor: 'pointer' }} onClick={() => loadFullGraph()}>
-            <CustomStatistic title={filterLayer ? "总节点数（点击取消筛选）" : "总节点数"} value={layerStats.total} />
-          </Col>
-          <Col flex="0 0 1px"><div style={{ borderLeft: '1px solid #e8e8e8', height: '40px' }} /></Col>
-          <Col flex="1"><CustomStatistic title="总关系数" value={layerStats.total_relationships || 0} /></Col>
-          <Col flex="0 0 1px"><div style={{ borderLeft: '1px solid #e8e8e8', height: '40px' }} /></Col>
-          <Col flex="1"><CustomStatistic title="当前节点数" value={processedData.nodes.length} /></Col>
-          <Col flex="0 0 1px"><div style={{ borderLeft: '1px solid #e8e8e8', height: '40px' }} /></Col>
-          <Col flex="1"><CustomStatistic title="当前关系数" value={processedData.links.length} /></Col>
-          <Col flex="0 0 1px"><div style={{ borderLeft: '1px solid #e8e8e8', height: '40px' }} /></Col>
-          {layerStats.details.map((layer, index) => {
-            const config = NODE_STYLE_CONFIG[layer.type] || { color: '#BFBFBF', label: layer.label };
-            const isActive = filterLayer === layer.type;
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Card
+          title="统计概览"
+          styles={{ body: { padding: '20px 24px' } }}
+        >
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <StatisticsScope
+                title="全库规模"
+                nodeCount={globalStats?.total_nodes || 0}
+                edgeCount={globalStats?.total_relationships || 0}
+                accent="#595959"
+                tag={<Tag>数据库</Tag>}
+                description={(
+                  <>
+                    四层已归类 {(globalStats?.classified_nodes || 0).toLocaleString()} 个节点
+                    {(globalStats?.unclassified_nodes || 0) > 0
+                      ? `，未归类 ${(globalStats?.unclassified_nodes || 0).toLocaleString()} 个`
+                      : ''}
+                  </>
+                )}
+              />
+            </Col>
+            <Col xs={24} lg={12}>
+              <StatisticsScope
+                title="当前子图"
+                nodeCount={displayGraph.nodes.length}
+                edgeCount={displayGraph.edges.length}
+                accent="#1677ff"
+                tag={<Tag color="blue">搜索 / 展开结果</Tag>}
+                description={displayGraph.limited
+                  ? viewMode === 'aggregate'
+                    ? `聚合展示 ${displayGraph.nodes.length} 个类型组/展开节点`
+                    : `核心展示 ${displayGraph.nodes.length} 个重要节点`
+                  : '与当前图谱展示数据保持一致'}
+              />
+            </Col>
+          </Row>
+        </Card>
+
+        <Row gutter={[12, 12]}>
+          {(globalStats?.layers || []).map((layer) => {
+            const meta = LAYER_META[layer.layer_code];
+            const selectedNodeTypes = filterState.selectedNodeTypesByLayer[layer.layer_code];
+            const selectedEdgeTypes = filterState.selectedEdgeTypesByLayer[layer.layer_code];
+            const layerSelected = filterState.selectedLayers.includes(layer.layer_code);
+            const active = layerSelected || selectedNodeTypes.length > 0 || selectedEdgeTypes.length > 0;
             return (
-              <React.Fragment key={layer.type}>
-                <Col flex="1" style={{ cursor: 'pointer' }} onClick={() => loadLayerFilter(layer.type)}>
-                  <div style={{
-                    padding: '2px 0',
-                    textAlign: 'center',
-                    borderRadius: 8,
-                    border: isActive ? `2px solid ${config.color}` : '2px solid transparent',
-                    background: isActive ? `${config.color}15` : 'transparent',
-                    margin: '-2px',
-                    transition: 'all 0.2s',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: config.color, marginRight: 6, display: 'inline-block' }} />
-                      <span style={{ fontSize: '14px', color: 'rgba(0,0,0,0.65)', fontWeight: 500 }}>{layer.label}</span>
+              <Col xs={24} sm={12} xl={6} key={layer.layer_code}>
+                <Card
+                  hoverable
+                  onClick={() => toggleLayer(layer.layer_code)}
+                  style={{
+                    height: '100%',
+                    borderColor: active ? meta.color : undefined,
+                    background: active ? meta.background : '#fff',
+                  }}
+                  title={(
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: meta.color }}>{meta.label}</span>
+                      {active && (
+                        <Tag color={meta.color}>
+                          {selectedNodeTypes.length + selectedEdgeTypes.length > 0
+                            ? `已选 ${selectedNodeTypes.length + selectedEdgeTypes.length}`
+                            : '层级高亮'}
+                        </Tag>
+                      )}
                     </div>
-                    <div style={{ fontSize: '24px', fontWeight: '600', color: '#000' }}>{layer.value.toLocaleString()}</div>
-                  </div>
-                </Col>
-                {index < layerStats.details.length - 1 && <Col flex="0 0 1px"><div style={{ borderLeft: '1px solid #e8e8e8', height: '40px' }} /></Col>}
-              </React.Fragment>
+                  )}
+                >
+                  <Row gutter={[8, 12]}>
+                    <Col span={12}><CountBlock title="节点总数" value={layer.node_count} /></Col>
+                    <Col span={12}><CountBlock title="层内关系" value={layer.rel_count} /></Col>
+                    <Col span={12}>
+                      <Popover
+                        trigger="click"
+                        placement="bottomLeft"
+                        overlayStyle={{ width: 360, maxWidth: 'calc(100vw - 32px)' }}
+                        open={openTypePopover === `${layer.layer_code}:node`}
+                        onOpenChange={open => setOpenTypePopover(
+                          open ? `${layer.layer_code}:node` : null,
+                        )}
+                        title={`${meta.label}节点类型`}
+                        content={(
+                          <TypeList
+                            counts={layer.node_type_counts || {}}
+                            currentCounts={currentTypeCounts[layer.layer_code].nodeTypes}
+                            selected={selectedNodeTypes}
+                            accent={meta.color}
+                            unit="节点"
+                            onToggle={type => toggleNodeType(layer.layer_code, type)}
+                            onClear={() => setFilterState(current => ({
+                              ...current,
+                              selectedNodeTypesByLayer: {
+                                ...current.selectedNodeTypesByLayer,
+                                [layer.layer_code]: [],
+                              },
+                            }))}
+                          />
+                        )}
+                      >
+                        <Tooltip title="查看该层数据组成，并可筛选或高亮对应类型节点。支持四层多选，用于观察跨层关联路径。">
+                          <Button
+                            block
+                            type={selectedNodeTypes.length > 0 ? 'primary' : 'default'}
+                            onClick={event => event.stopPropagation()}
+                            style={selectedNodeTypes.length > 0
+                              ? { background: meta.color, borderColor: meta.color }
+                              : undefined}
+                          >
+                            节点类型 {layer.node_type_count}
+                            {selectedNodeTypes.length > 0 ? ` · 已选${selectedNodeTypes.length}` : ''}
+                          </Button>
+                        </Tooltip>
+                      </Popover>
+                    </Col>
+                    <Col span={12}>
+                      <Popover
+                        trigger="click"
+                        placement="bottomLeft"
+                        overlayStyle={{ width: 360, maxWidth: 'calc(100vw - 32px)' }}
+                        open={openTypePopover === `${layer.layer_code}:edge`}
+                        onOpenChange={open => setOpenTypePopover(
+                          open ? `${layer.layer_code}:edge` : null,
+                        )}
+                        title={`${meta.label}关系类型`}
+                        content={(
+                          <TypeList
+                            counts={layer.rel_type_counts || {}}
+                            currentCounts={currentTypeCounts[layer.layer_code].edgeTypes}
+                            selected={selectedEdgeTypes}
+                            accent={meta.color}
+                            unit="关系"
+                            onToggle={type => toggleEdgeType(layer.layer_code, type)}
+                            onClear={() => setFilterState(current => {
+                              const nextByLayer = {
+                                ...current.selectedEdgeTypesByLayer,
+                                [layer.layer_code]: [],
+                              };
+                              return {
+                                ...current,
+                                selectedEdgeTypesByLayer: nextByLayer,
+                                selectedEdgeTypes: [...new Set(Object.values(nextByLayer).flat())],
+                              };
+                            })}
+                          />
+                        )}
+                      >
+                        <Tooltip title="筛选或高亮指定关系，例如 INVEST、MENTION、COMPLIES_WITH，支持多选。">
+                          <Button
+                            block
+                            type={selectedEdgeTypes.length > 0 ? 'primary' : 'default'}
+                            onClick={event => event.stopPropagation()}
+                            style={selectedEdgeTypes.length > 0
+                              ? { background: meta.color, borderColor: meta.color }
+                              : undefined}
+                          >
+                            关系类型 {layer.rel_type_count}
+                            {selectedEdgeTypes.length > 0 ? ` · 已选${selectedEdgeTypes.length}` : ''}
+                          </Button>
+                        </Tooltip>
+                      </Popover>
+                    </Col>
+                    {(selectedNodeTypes.length > 0 || selectedEdgeTypes.length > 0) && (
+                      <Col span={24}>
+                        <div style={{
+                          display: 'flex',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          padding: '10px 12px',
+                          borderRadius: 6,
+                          background: 'rgba(255,255,255,0.72)',
+                          border: `1px solid ${meta.color}33`,
+                        }}>
+                          {selectedNodeTypes.map(type => (
+                            <Tag key={`node-${type}`} color={meta.color}>节点 {type}</Tag>
+                          ))}
+                          {selectedEdgeTypes.map(type => (
+                            <Tag key={`edge-${type}`} color="default">关系 {type}</Tag>
+                          ))}
+                        </div>
+                      </Col>
+                    )}
+                  </Row>
+                </Card>
+              </Col>
             );
           })}
         </Row>
-        
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
-          <div
-            style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: 'rgba(0,0,0,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-            onClick={() => setShowDetailedStats(!showDetailedStats)}
+
+        <Card
+          size="small"
+          title="当前筛选条件"
+          extra={(
+            <Space>
+              <span style={{ color: '#8c8c8c', fontSize: 12 }}>模式</span>
+              <Select
+                value={filterState.filterMode}
+                style={{ width: 108 }}
+                options={[
+                  { value: 'highlight', label: '高亮模式' },
+                  { value: 'filter', label: '过滤模式' },
+                ]}
+                onChange={filterMode => setFilterState(current => ({ ...current, filterMode }))}
+              />
+              <Button size="small" disabled={!hasTypeFilters} onClick={clearTypeFilters}>
+                清空类型筛选
+              </Button>
+            </Space>
+          )}
+        >
+          {!hasTypeFilters ? (
+            <span style={{ color: '#8c8c8c' }}>
+              暂未限制类型。默认高亮模式会保留完整四层结构。
+            </span>
+          ) : (
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              {(Object.keys(LAYER_META) as LayerCode[]).map((layer) => {
+                const nodeTypes = filterState.selectedNodeTypesByLayer[layer];
+                const edgeTypes = filterState.selectedEdgeTypesByLayer[layer];
+                const selected = filterState.selectedLayers.includes(layer);
+                if (!selected && nodeTypes.length === 0 && edgeTypes.length === 0) return null;
+                return (
+                  <div key={layer} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ width: 54, color: LAYER_META[layer].color, fontWeight: 600 }}>
+                      {LAYER_META[layer].label}
+                    </span>
+                    {selected && (
+                      <Tag
+                        closable
+                        color={LAYER_META[layer].color}
+                        onClose={() => toggleLayer(layer)}
+                      >
+                        整层
+                      </Tag>
+                    )}
+                    {nodeTypes.map(type => (
+                      <Tag
+                        key={`filter-node-${layer}-${type}`}
+                        closable
+                        color={LAYER_META[layer].color}
+                        onClose={() => toggleNodeType(layer, type)}
+                      >
+                        {type}
+                      </Tag>
+                    ))}
+                    {edgeTypes.map(type => (
+                      <Tag
+                        key={`filter-edge-${layer}-${type}`}
+                        closable
+                        onClose={() => toggleEdgeType(layer, type)}
+                      >
+                        关系 {type}
+                      </Tag>
+                    ))}
+                  </div>
+                );
+              })}
+            </Space>
+          )}
+        </Card>
+
+        <Card>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSearch}
+            initialValues={{
+              searchLayer: 'all',
+              nodeType: 'all',
+              depth: 2,
+              relationWhitelist: [],
+            }}
           >
-            <DownOutlined style={{ fontSize: 11, transition: 'transform 0.2s', transform: showDetailedStats ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-            层级详细统计
+            <Row gutter={12} align="bottom">
+              <Col xs={24} lg={7}>
+                <Form.Item name="keyword" label="节点名称" style={{ marginBottom: 0 }}>
+                  <Input placeholder="输入企业、事件、风险特征或法规名称" allowClear />
+                </Form.Item>
+              </Col>
+              <Col xs={12} lg={3}>
+                <Form.Item name="searchLayer" label="检索层级" style={{ marginBottom: 0 }}>
+                  <Select options={[
+                    { value: 'all', label: '全部层级' },
+                    ...LAYER_ORDER.map(value => ({ value, label: LAYER_META[value].label })),
+                  ]} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} lg={3}>
+                <Form.Item name="nodeType" label="节点类型" style={{ marginBottom: 0 }}>
+                  <Select showSearch options={[{ value: 'all', label: '全部类型' }, ...NODE_TYPE_OPTIONS]} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} lg={2}>
+                <Form.Item name="depth" label="穿透深度" style={{ marginBottom: 0 }}>
+                  <Select options={[1, 2, 3, 4, 5].map(value => ({ value, label: `${value}跳` }))} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} lg={6}>
+                <Form.Item name="relationWhitelist" label="关系白名单" style={{ marginBottom: 0 }}>
+                  <Select mode="multiple" maxTagCount="responsive" allowClear options={RELATION_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} lg={3}>
+                <Space wrap>
+                  <Tooltip title="搜索">
+                    <Button
+                      data-testid="kg-search-button"
+                      type="primary"
+                      htmlType="submit"
+                      icon={<SearchOutlined />}
+                      onClick={() => form.submit()}
+                    />
+                  </Tooltip>
+                  <Tooltip title="刷新默认子图"><Button icon={<ReloadOutlined />} onClick={() => void handleRefresh()} /></Tooltip>
+                  <Tooltip title="清空"><Button icon={<ClearOutlined />} onClick={handleClear} /></Tooltip>
+                  <Tooltip title="适应画布"><Button icon={<AimOutlined />} onClick={() => graphRef.current?.fitView()} /></Tooltip>
+                  <Tooltip title="导出 PNG"><Button icon={<PictureOutlined />} onClick={() => graphRef.current?.exportPNG()} /></Tooltip>
+                  <Tooltip title="导出 CSV"><Button icon={<FileExcelOutlined />} onClick={exportCSV} /></Tooltip>
+                </Space>
+              </Col>
+            </Row>
+          </Form>
+        </Card>
+
+        {warnings.length > 0 && (
+          <Alert
+            type={summary.truncated ? 'warning' : 'info'}
+            showIcon
+            message={summary.truncated ? '当前结果已达到返回上限，图谱可能不是完整子图' : '查询提示'}
+            description={warnings.join('；')}
+          />
+        )}
+        {displayGraph.limited && (
+          <Alert
+            type="info"
+            showIcon
+            message={viewMode === 'aggregate' ? '当前使用聚合视图' : '当前使用核心视图'}
+            description={viewMode === 'aggregate'
+              ? `接口返回 ${visibleGraph.nodes.length.toLocaleString()} 个节点，当前折叠 ${displayGraph.foldedNodeCount.toLocaleString()} 个节点；点击聚合节点可展开 Top 20。`
+              : `当前优先展示中心、一跳邻居、高度数和跨层桥接节点，已隐藏 ${displayGraph.foldedNodeCount.toLocaleString()} 个低优先级节点。`}
+          />
+        )}
+        {graphError && (
+          <Alert
+            type="error"
+            showIcon
+            message="图谱加载或渲染失败"
+            description={graphError}
+          />
+        )}
+        {traceId && (
+          <div style={{ color: '#8c8c8c', fontSize: 12, textAlign: 'right' }}>
+            Trace ID: {traceId} · 匹配节点 {matchedNodes.length} · 三元组 {triples.length}
           </div>
-          {showDetailedStats && <Row gutter={12}>
-            {detailedStats.map((layer) => {
-              const layerColors: Record<string, string> = {
-                'Subject': '#f0f8ff',
-                'Event': '#fff5f5',
-                'Feature': '#f6fff6',
-                'Regulation': '#faf5ff'
-              };
-              const layerBorderColors: Record<string, string> = {
-                'Subject': '#1890ff',
-                'Event': '#ff4d4f',
-                'Feature': '#52c41a',
-                'Regulation': '#722ed1'
-              };
-              
-              const nodeTypesContent = (
-                <div style={{ maxHeight: 150, overflowY: 'auto', minWidth: 120, maxWidth: 200 }}>
-                  {layer.node_types.length > 0 ? (
-                    layer.node_types.map((type, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          padding: '6px 12px', 
-                          fontSize: 12, 
-                          color: '#333',
-                          borderBottom: idx < layer.node_types.length - 1 ? '1px solid #f0f0f0' : 'none',
-                          transition: 'background 0.2s',
-                          cursor: 'default'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        • {type}
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ padding: '8px 12px', fontSize: 12, color: '#999', textAlign: 'center' }}>暂无类型</div>
-                  )}
-                </div>
-              );
-              
-              const relTypesContent = (
-                <div style={{ maxHeight: 150, overflowY: 'auto', minWidth: 120, maxWidth: 200 }}>
-                  {layer.rel_types.length > 0 ? (
-                    layer.rel_types.map((type, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          padding: '6px 12px', 
-                          fontSize: 12, 
-                          color: '#333',
-                          borderBottom: idx < layer.rel_types.length - 1 ? '1px solid #f0f0f0' : 'none',
-                          transition: 'background 0.2s',
-                          cursor: 'default'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        • {type}
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ padding: '8px 12px', fontSize: 12, color: '#999', textAlign: 'center' }}>暂无类型</div>
-                  )}
-                </div>
-              );
-              
-              return (
-                <Col span={6} key={layer.layer_code}>
-                  <Card 
-                    size="small" 
-                    style={{ 
-                      background: layerColors[layer.layer_code] || '#fafafa',
-                      borderColor: layerBorderColors[layer.layer_code] || '#d9d9d9',
-                      borderWidth: 1,
-                      borderRadius: 8,
-                      height: '100%',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      transition: 'all 0.3s'
-                    }}
-                    styles={{ body: { padding: '14px' } }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
-                    }}
-                  >
-                    <div style={{ textAlign: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: `2px solid ${layerBorderColors[layer.layer_code]}` }}>
-                      <div style={{ fontSize: 16, fontWeight: 'bold', color: layerBorderColors[layer.layer_code] }}>
-                        {layer.layer}
-                      </div>
-                    </div>
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
-                        <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>节点总数:</span>
-                        <span style={{ fontSize: 20, fontWeight: 'bold', color: layerBorderColors[layer.layer_code] }}>{layer.node_count}</span>
-                      </div>
-                      
-                      <div style={{ 
-                        background: 'rgba(255,255,255,0.8)', 
-                        padding: '6px 8px', 
-                        borderRadius: 4, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        border: '1px solid rgba(0,0,0,0.04)'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.6)' }}>节点类型数:</span>
-                          <span style={{ fontSize: 13, fontWeight: 'bold', color: layerBorderColors[layer.layer_code] }}>{layer.node_type_count}</span>
-                        </div>
-                        <Popover 
-                          content={nodeTypesContent} 
-                          trigger="click" 
-                          placement="bottomRight"
-                          overlayStyle={{ padding: 0 }}
-                          overlayInnerStyle={{ padding: 0, borderRadius: 6 }}
-                        >
-                          <DownOutlined 
-                            style={{ 
-                              fontSize: 11, 
-                              color: layerBorderColors[layer.layer_code], 
-                              cursor: 'pointer',
-                              padding: '4px',
-                              borderRadius: '50%',
-                              transition: 'all 0.2s'
-                            }} 
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(0,0,0,0.06)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'transparent';
-                            }}
-                          />
-                        </Popover>
-                      </div>
+        )}
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
-                        <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>关系总数:</span>
-                        <span style={{ fontSize: 20, fontWeight: 'bold', color: layerBorderColors[layer.layer_code] }}>{layer.rel_count}</span>
-                      </div>
-                      
-                      <div style={{ 
-                        background: 'rgba(255,255,255,0.8)', 
-                        padding: '6px 8px', 
-                        borderRadius: 4, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        border: '1px solid rgba(0,0,0,0.04)'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.6)' }}>关系类型数:</span>
-                          <span style={{ fontSize: 13, fontWeight: 'bold', color: layerBorderColors[layer.layer_code] }}>{layer.rel_type_count}</span>
-                        </div>
-                        <Popover 
-                          content={relTypesContent} 
-                          trigger="click" 
-                          placement="bottomRight"
-                          overlayStyle={{ padding: 0 }}
-                          overlayInnerStyle={{ padding: 0, borderRadius: 6 }}
-                        >
-                          <DownOutlined 
-                            style={{ 
-                              fontSize: 11, 
-                              color: layerBorderColors[layer.layer_code], 
-                              cursor: 'pointer',
-                              padding: '4px',
-                              borderRadius: '50%',
-                              transition: 'all 0.2s'
-                            }} 
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(0,0,0,0.06)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'transparent';
-                            }}
-                          />
-                        </Popover>
-                      </div>
-                    </Space>
-                  </Card>
-                </Col>
-              );
-            })}
-          </Row>
-          }
-        </div>
-      </Card>
-
-      <Card style={{ marginBottom: 16 }}>
-        <Form form={form} layout="vertical" onFinish={handleSearch}>
-          <Row gutter={16} align="bottom">
-            <Col flex="1">
-              <Form.Item label="按节点名称查询" name="keyword" style={{ marginBottom: 0 }}>
-                <Input placeholder="输入任意节点名称（支持所有层级节点）" style={{ height: 40 }} />
-              </Form.Item>
-            </Col>
-            <Col style={{ width: 160 }}>
-              <Form.Item label="检索层级" name="searchLayer" style={{ marginBottom: 0 }} initialValue="all">
-                <Select options={[
-                  {value: 'all', label: '全部层级'},
-                  {value: 'Subject', label: '主体层'},
-                  {value: 'Event', label: '事件层'},
-                  {value: 'Feature', label: '特征层'},
-                  {value: 'Regulation', label: '法规层'},
-                ]} style={{ height: 40 }} />
-              </Form.Item>
-            </Col>
-            <Col style={{ width: 140 }}>
-              <Form.Item label="穿透深度" name="layers" style={{ marginBottom: 0 }} initialValue={1}>
-                <Select options={[{value:1, label:'1层'}, {value:2, label:'2层'}, {value:3, label:'3层'}, {value:4, label:'4层'}]} style={{ height: 40 }} />
-              </Form.Item>
-            </Col>
-            <Col>
-              <Space>
-                <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()} style={{ height: 42, width: 42 }} />
-                <Button icon={<ReloadOutlined />} onClick={() => { form.resetFields(); loadFullGraph(); }} style={{ height: 42, width: 42 }} />
-                <Tooltip title="导出图谱PNG"><Button icon={<PictureOutlined />} onClick={handleExportPNG} style={{ height: 42 }} /></Tooltip>
-                <Tooltip title="导出统计CSV"><Button icon={<FileExcelOutlined />} onClick={handleExportCSV} style={{ height: 42 }} /></Tooltip>
+        <Card
+          title={(
+            <Space>
+              <NodeIndexOutlined />
+              <span>主体驱动交互图谱</span>
+              <Tag>{displayGraph.nodes.length} 节点</Tag>
+              <Tag>{displayGraph.edges.length} 关系</Tag>
+            </Space>
+          )}
+          extra={(
+            <Space wrap size={12}>
+              <Select
+                value={viewMode}
+                options={VIEW_OPTIONS}
+                onChange={(value) => {
+                  setViewMode(value);
+                  setExpandedAggregateGroups(new Set());
+                }}
+                style={{ width: 112 }}
+              />
+              <Select
+                value={layoutSelection}
+                options={LAYOUT_OPTIONS}
+                onChange={value => setLayoutSelection(value)}
+                style={{ width: 132 }}
+              />
+              <Tooltip title={centerNodeId ? '仅展示中心节点及其一跳邻居' : '当前没有中心节点'}>
+                <Space size={5}>
+                  <span style={{ fontSize: 12 }}>中心一跳</span>
+                  <Switch
+                    size="small"
+                    checked={onlyCenterNeighbors}
+                    disabled={!centerNodeId}
+                    onChange={setOnlyCenterNeighbors}
+                  />
+                </Space>
+              </Tooltip>
+              <Space size={5}>
+                <span style={{ fontSize: 12 }}>隐藏孤立点</span>
+                <Switch size="small" checked={hideIsolated} onChange={setHideIsolated} />
               </Space>
-            </Col>
-          </Row>
-        </Form>
-      </Card>
-
-      <Card styles={{ body: { padding: 0 } }}>
-        <div style={{ background: '#fff', height: CANVAS_HEIGHT, position: 'relative' }}>
+              {layoutSelection !== 'auto' && (
+                <Button size="small" onClick={() => setLayoutSelection('auto')}>
+                  恢复自动布局
+                </Button>
+              )}
+            </Space>
+          )}
+          styles={{ body: { padding: 0, minHeight: 620, position: 'relative' } }}
+        >
           {loading && (
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, background: 'rgba(255,255,255,0.7)' }}>
-              <Spin size="large" tip="加载图谱数据..." />
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.72)',
+            }}>
+              <Spin size="large" />
             </div>
           )}
-          {!loading && processedData.nodes.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Empty description="暂无图谱数据" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                <Button type="primary" onClick={loadFullGraph} icon={<ReloadOutlined />}>刷新数据</Button>
-              </Empty>
+          {!loading && initialized && displayGraph.nodes.length === 0 ? (
+            <div style={{ height: 520, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Empty
+                description={
+                  nodes.length > 0
+                    ? '当前筛选条件下无节点，请取消层级、节点类型或关系类型筛选'
+                    : '当前没有可展示的图谱数据，请输入关键词搜索或刷新默认子图'
+                }
+              />
             </div>
           ) : (
-            <div ref={containerRef} style={{ width: '100%', height: CANVAS_HEIGHT, background: '#fff' }} />
+            <FourLayerGraph
+              ref={graphRef}
+              nodes={displayGraph.nodes}
+              edges={displayGraph.edges}
+              layoutMode={resolvedLayoutMode}
+              centerNodeId={centerNodeId}
+              omittedNodeCount={displayGraph.foldedNodeCount}
+              highlightedNodeIds={multiLayerFilter.highlightedNodeIds}
+              highlightedEdgeIds={multiLayerFilter.highlightedEdgeIds}
+              selectedNodeId={selectedNode?.id}
+              selectedEdgeId={selectedEdge?.id}
+              hasActiveFilter={hasTypeFilters}
+              filterMode={filterState.filterMode}
+              loading={loading}
+              onNodeClick={handleGraphNodeClick}
+              onNodeDoubleClick={handleGraphNodeDoubleClick}
+              onEdgeClick={handleGraphEdgeClick}
+              onRenderError={setGraphError}
+            />
           )}
+        </Card>
+
+        <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+          当前子图统计与图谱展示一致：nodes.length={displayGraph.nodes.length}、
+          edges.length={displayGraph.edges.length}；当前视图为
+          {VIEW_OPTIONS.find(option => option.value === viewMode)?.label}，布局为
+          {LAYOUT_OPTIONS.find(option => option.value === resolvedLayoutMode)?.label}。
         </div>
-      </Card>
+      </Space>
 
-      <Drawer title="节点详情" width={380} onClose={() => setDrawerVisible(false)} open={drawerVisible}>
-        {selectedNode ? (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ width: 48, height: 48, borderRadius: '50%', background: selectedNode.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 'bold', marginRight: 16 }}>
-                {selectedNode.levelName?.[0]}
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 18 }}>{selectedNode.name}</h3>
-                <Tag color={selectedNode.color}>{selectedNode.levelName}</Tag>
-                <div style={{ marginTop: 12 }}>
-                  <Button
-                    type="primary"
-                    icon={<NodeIndexOutlined />}
-                    loading={expanding}
-                    onClick={async () => {
-                      setDrawerVisible(false);
-                      if (!selectedNode?.id) return;
-
-                      setExpanding(true);
-                      try {
-                        const response = await fetch(`/api/v1/graph/expand/${selectedNode.id}?depth=1&limit=100`);
-                        const result = await response.json();
-
-                        if (result.nodes && result.nodes.length > 0) {
-                          setGraphData((prev: any) => {
-                            const existingNodeIds = new Set((prev.nodes || []).map((n: any) => n.id));
-                            const existingEdgeIds = new Set((prev.links || prev.edges || []).map((l: any) => `${l.source || l.sourceId}-${l.target || l.targetId}-${l.label || 'default'}`));
-
-                            const newNodes = result.nodes.filter((n: any) => !existingNodeIds.has(n.id));
-                            const newEdges = (result.edges || []).filter((e: any) => {
-                              const eid = `${e.source || e.sourceId}-${e.target || e.targetId}-${e.label || 'default'}`;
-                              return !existingEdgeIds.has(eid);
-                            });
-
-                            return {
-                              nodes: [...(prev.nodes || []), ...newNodes],
-                              edges: [...(prev.edges || []), ...newEdges],
-                              links: [...(prev.links || prev.edges || []), ...newEdges],
-                            };
-                          });
-                          message.success(`展开 ${result.nodes.length} 个关联节点`);
-                        }
-                      } catch (err) {
-                        message.error('展开子图失败');
-                      } finally {
-                        setExpanding(false);
-                      }
-                    }}
-                  >
-                    展开关联
-                  </Button>
-                </div>
-              </div>
-            </div>
+      <Drawer
+        title={selectedNode
+          ? `节点详情 - ${selectedNode.name}`
+          : selectedEdge
+            ? `关系详情 - ${selectedEdge.type}`
+            : '图谱详情'}
+        width={460}
+        open={Boolean(selectedNode || selectedEdge)}
+        onClose={() => {
+          setSelectedNode(null);
+          setSelectedEdge(null);
+        }}
+      >
+        {selectedNode && (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions column={1} bordered size="small">
-              {Object.keys(selectedNode.properties || {}).map(key => {
-                const val = selectedNode.properties[key];
-                if (!val || val === null || val === undefined) return null;
-                // 格式化属性名称
-                const label = PROPERTY_MAP[key]?.label || key;
-                // 格式化值
-                let displayValue = String(val);
-                if (typeof val === 'object') {
-                  displayValue = JSON.stringify(val, null, 2);
-                }
-                return (
-                  <Descriptions.Item key={key} label={label}>
-                    <span style={{ wordBreak: 'break-all' }}>{displayValue}</span>
-                  </Descriptions.Item>
-                )
-              })}
+              <Descriptions.Item label="节点名称">{selectedNode.name}</Descriptions.Item>
+              <Descriptions.Item label="节点 ID">{selectedNode.id}</Descriptions.Item>
+              <Descriptions.Item label="层级">
+                <Tag color={selectedNode.layer === 'Unknown' ? 'default' : LAYER_META[selectedNode.layer].color}>
+                  {selectedNode.layer}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="类型">{selectedNode.type}</Descriptions.Item>
+              <Descriptions.Item label="度数">{selectedNode.degree || 0}</Descriptions.Item>
+              <Descriptions.Item label="标签">
+                {selectedNode.labels.map(label => <Tag key={label}>{label}</Tag>)}
+              </Descriptions.Item>
+              {Object.entries(selectedNode.properties).map(([key, value]) => (
+                <Descriptions.Item key={key} label={GENERAL_CONFIG.propertyMap[key]?.label || key}>
+                  <span style={{ wordBreak: 'break-all' }}>
+                    {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                  </span>
+                </Descriptions.Item>
+              ))}
             </Descriptions>
+            <Button
+              block
+              type="primary"
+              icon={<NodeIndexOutlined />}
+              loading={loading}
+              onClick={() => void handleExpand(selectedNode)}
+            >
+              按当前深度展开关联子图
+            </Button>
+            <Button
+              block
+              onClick={() => {
+                setCenterOverrideId(selectedNode.id);
+                setOnlyCenterNeighbors(false);
+                setViewMode('core');
+                setSelectedNode(null);
+                message.success(`已将“${selectedNode.name}”设为当前中心`);
+              }}
+            >
+              设为中心节点
+            </Button>
           </Space>
-        ) : <Empty />}
+        )}
+        {selectedEdge && (
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="关系类型">{selectedEdge.type}</Descriptions.Item>
+            <Descriptions.Item label="Source">{selectedEdge.source}</Descriptions.Item>
+            <Descriptions.Item label="Target">{selectedEdge.target}</Descriptions.Item>
+            {selectedEdge.count && (
+              <Descriptions.Item label="聚合数量">{selectedEdge.count}</Descriptions.Item>
+            )}
+            {Object.entries(selectedEdge.properties || {}).map(([key, value]) => (
+              <Descriptions.Item key={key} label={key}>
+                <span style={{ wordBreak: 'break-all' }}>
+                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                </span>
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+        )}
+        {(selectedNode || selectedEdge) && (
+          <>
+            <div style={{ fontWeight: 600, margin: '20px 0 10px' }}>图谱摘要</div>
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="当前节点数">{displayGraph.nodes.length}</Descriptions.Item>
+              <Descriptions.Item label="当前关系数">{displayGraph.edges.length}</Descriptions.Item>
+              <Descriptions.Item label="视图模式">
+                {VIEW_OPTIONS.find(option => option.value === viewMode)?.label}
+              </Descriptions.Item>
+              <Descriptions.Item label="布局模式">
+                {LAYOUT_OPTIONS.find(option => option.value === resolvedLayoutMode)?.label}
+              </Descriptions.Item>
+              <Descriptions.Item label="Trace ID">{traceId || '-'}</Descriptions.Item>
+              <Descriptions.Item label="是否截断">{summary.truncated ? '是' : '否'}</Descriptions.Item>
+              <Descriptions.Item label="Warnings">
+                {warnings.length ? warnings.join('；') : '无'}
+              </Descriptions.Item>
+            </Descriptions>
+          </>
+        )}
       </Drawer>
     </PageContainer>
   );

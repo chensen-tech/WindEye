@@ -11,7 +11,7 @@ import type {
   Subgraph, CommunityItem, EntityCommunityMap, RiskPath, ResolvedEntity,
   SubgraphNode, SubgraphEdge,
 } from '../types/api'
-import { COMMUNITY_COLORS, RISK_LEVEL_VISUAL } from './graphStyles'
+import { COMMUNITY_COLORS, RISK_LEVEL_VISUAL, getNodeDisplayName } from './graphStyles'
 
 const { Text } = Typography
 
@@ -27,6 +27,7 @@ interface CircleNode {
   matchedPathIds: string[]
   role: 'core' | 'bridge' | 'member'
   complianceScore: number | null
+  isSeed: boolean
 }
 
 interface CommunityCircleViewProps {
@@ -50,11 +51,26 @@ const CENTER_RING_RADIUS = 30
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getNodeLabel(node: SubgraphNode): string {
-  return (node.name || node.title || node.zh_name || node.id || '').slice(0, 15)
+  return getNodeDisplayName(node).slice(0, 15)
 }
 
 function getNodeType(node: SubgraphNode): string {
   return node.type || 'Unknown'
+}
+
+function resolveNodeVisual(entityType: string): { fill: string; stroke: string } {
+  const t = (entityType || '').toUpperCase()
+  if (t === 'COMPANY' || t === 'SUBJECT') return { fill: '#BAE7FF', stroke: '#1677ff' }
+  if (t === 'PERSON') return { fill: '#D3ADF7', stroke: '#722ed1' }
+  if (t === 'EVENT') return { fill: '#FFA39E', stroke: '#cf1322' }
+  if (t === 'SUB_EVENT') return { fill: '#FFCCC7', stroke: '#cf1322' }
+  if (t === 'TIME') return { fill: '#D9D9D9', stroke: '#595959' }
+  if (t === 'RISKFEATURE') return { fill: '#B7EB8F', stroke: '#389e0d' }
+  if (t === 'RISKFACTOR') return { fill: '#95DE64', stroke: '#389e0d' }
+  if (t === 'ACTION') return { fill: '#D9D9D9', stroke: '#595959' }
+  if (t === 'REGULATION') return { fill: '#FFE58F', stroke: '#d48806' }
+  if (t === 'LAW') return { fill: '#FFD666', stroke: '#d48806' }
+  return { fill: '#F5F5F5', stroke: '#8c8c8c' }
 }
 
 function bfsHopLevels(
@@ -211,6 +227,7 @@ function enrichCircleData(
       matchedPathIds: risk?.pathIds ?? [],
       role: nodeRole.get(n.id) ?? 'member',
       complianceScore: score != null ? Math.round(score) : null,
+      isSeed: seedIds.has(n.id),
     }
   })
 
@@ -441,9 +458,8 @@ const CommunityCircleView: React.FC<CommunityCircleViewProps> = ({
 
     const g6Nodes = circleNodes.map(cn => {
       const pos = positions.get(cn.nodeId)
-      const communityColor = cn.primaryCommunityId != null
-        ? COMMUNITY_COLORS[cn.primaryCommunityId % COMMUNITY_COLORS.length]
-        : '#d9d9d9'
+      const visual = resolveNodeVisual(cn.entityType)
+      const fillColor = visual.fill
 
       // Role visual style
       let lineWidth = 1
@@ -470,13 +486,25 @@ const CommunityCircleView: React.FC<CommunityCircleViewProps> = ({
 
       // Stroke: risk level takes priority; compliance low-score adds warning
       const riskVisual = cn.riskLevel ? RISK_LEVEL_VISUAL[cn.riskLevel] : null
-      let strokeColor = communityColor + '99'
+      let strokeColor = visual.stroke
       if (riskVisual) {
         strokeColor = riskVisual.border
         lineWidth = cn.riskLevel === 'high' ? 3 : cn.riskLevel === 'medium' ? 2 : 1.5
       } else if (cn.complianceScore != null && cn.complianceScore < 40) {
         strokeColor = '#f5222d'
         lineWidth = 2.5
+      }
+
+      // Seed node halo (light ring / outer ring)
+      let shadowColor: string | undefined = undefined
+      let shadowBlur = 0
+      if (cn.isSeed) {
+        shadowColor = 'rgba(40, 85, 209, 0.75)'
+        shadowBlur = 18
+        lineWidth = Math.max(lineWidth, 3.5)
+        if (!riskVisual && !(cn.complianceScore != null && cn.complianceScore < 40)) {
+          strokeColor = '#2855D1'
+        }
       }
 
       const size = RING_NODE_SIZES[Math.min(cn.hopLevel, 3)] ?? 18
@@ -487,7 +515,7 @@ const CommunityCircleView: React.FC<CommunityCircleViewProps> = ({
         x: pos?.x ?? 0,
         y: pos?.y ?? 0,
         size,
-        style: { fill: communityColor, stroke: strokeColor, lineWidth, lineDash, fillOpacity },
+        style: { fill: fillColor, stroke: strokeColor, lineWidth, lineDash, fillOpacity, shadowColor, shadowBlur },
         _communityId: cn.primaryCommunityId,
         _riskLevel: cn.riskLevel,
         _matchedPathIds: cn.matchedPathIds,

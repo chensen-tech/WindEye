@@ -6,7 +6,7 @@ import type { Subgraph, SubgraphNode, SubgraphEdge, AlignmentFeature, EntityComm
 import type { LegendStats } from './LegendPanel'
 import NodeContextMenu from './NodeContextMenu'
 import GraphToolbar, { LayoutMode } from './GraphToolbar'
-import { NODE_TYPE_COLORS, NODE_TYPE_LABELS, RELATION_LABELS, RISK_LEVEL_VISUAL } from './graphStyles'
+import { NODE_TYPE_COLORS, NODE_TYPE_LABELS, RELATION_LABELS, RISK_LEVEL_VISUAL, getNodeDisplayName } from './graphStyles'
 
 const VALID_NODE_TYPES = new Set(['COMPANY', 'PERSON', 'EVENT', 'SUB_EVENT', 'TIME', 'RiskFeature', 'RiskFactor', 'Action', 'Regulation', 'Law'])
 
@@ -75,16 +75,17 @@ const normalizeNeo4jNode = (raw: any): SubgraphNode => {
     : rawType === 'REGULATOR' ? 'EVENT'
     : rawType.toUpperCase?.() || rawType
 
+  const displayName = getNodeDisplayName(raw)
   return {
     id: String(raw.id),
     type,
     entityType: type,
     entity_type: type,
-    label: raw.label || props.title || props.name || props.COMPANY_NM || raw.id,
+    label: displayName,
     score: props.score ?? raw.score ?? 1,
-    title: props.title || props.name || props.COMPANY_NM || raw.label || raw.id,
-    name: props.name || props.COMPANY_NM || props.title || raw.label || raw.id,
-    zh_name: props.zh_name || raw.label || props.name,
+    title: displayName,
+    name: displayName,
+    zh_name: props.zh_name || raw.label || displayName,
     overview: props.overview || props.RISK_INFO || '',
     popularity: props.popularity,
     rating: props.rating,
@@ -311,7 +312,7 @@ const buildG6Data = (
       const nodeType = resolveNodeType(node)
       validNodeIds.add(nodeIdStr)
       const visual = NODE_VISUAL[nodeType] ?? NODE_DEFAULT_VISUAL
-      let label = String(node.title || (node as any).label || (node as any).zh_name || (node as any).name || node.id)
+      let label = getNodeDisplayName(node)
       if (label.length > 15) label = label.slice(0, 12) + '...'
 
       // Risk-level color mapping
@@ -330,7 +331,7 @@ const buildG6Data = (
       const isNeighbor = neighborIdSet.has(nodeIdStr)
 
       // Community coloring
-      const nodeName = String(node.title || node.name || node.zh_name || '')
+      const nodeName = getNodeDisplayName(node)
       const communityMatch = nodeCommunityMap.get(nodeName) || nodeCommunityMap.get(String(node.id))
       const communityIds = communityMatch?.communityIds || []
       const communityRoles = communityMatch?.roles || []
@@ -653,7 +654,7 @@ export const EnhancedGraphPanel = forwardRef<EnhancedGraphPanelHandle, Props>(
             const idStr = String(n.id)
             if (!graph.findById(idStr)) {
               const v = NODE_VISUAL[n.type] || NODE_DEFAULT_VISUAL
-              let label = String(n.title || (n as any).label || n.zh_name || n.name || n.id)
+              let label = getNodeDisplayName(n)
               if (label.length > 15) label = label.slice(0, 12) + '...'
               try {
                 graph.addItem('node', {

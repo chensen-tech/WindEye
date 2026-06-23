@@ -22,15 +22,34 @@ function Free-Port {
     }
 }
 
+function Show-Dependency {
+    param([int]$Port, [string]$Label, [bool]$Required)
+    $connection = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($connection) {
+        Write-Host "  $Label is listening on port $Port" -ForegroundColor Green
+    } elseif ($Required) {
+        Write-Host "  $Label is not listening on port $Port (required)" -ForegroundColor Red
+    } else {
+        Write-Host "  $Label is not listening on port $Port (optional)" -ForegroundColor DarkYellow
+    }
+}
+
 # ── 1. 仅释放目标端口，不影响其他进程 ──
 Write-Host "[1/4] Checking ports..." -ForegroundColor Yellow
 Free-Port -Port 8000 -Label "Backend"
 Free-Port -Port 8001 -Label "Frontend"
+Write-Host "  Dependency status:" -ForegroundColor Gray
+Show-Dependency -Port 7687 -Label "Neo4j" -Required $true
+Show-Dependency -Port 3306 -Label "MySQL" -Required $false
+Show-Dependency -Port 6379 -Label "Redis" -Required $false
 
 # ── 2. 启动后端 ──
 Write-Host "[2/4] Starting backend (port 8000)..." -ForegroundColor Green
 $backendDir = Join-Path $root "backend"
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendDir'; Write-Host 'Backend: http://localhost:8000' -ForegroundColor Green; python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+$venvPython = Join-Path $backendDir "venv\Scripts\python.exe"
+$pythonCommand = if (Test-Path $venvPython) { "'$venvPython'" } else { "python" }
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendDir'; Write-Host 'Backend: http://localhost:8000' -ForegroundColor Green; & $pythonCommand -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
 # ── 3. 启动前端 (使用 PORT 环境变量指定端口，避免默认 8000 冲突) ──
 Write-Host "[3/4] Starting frontend (port 8001)..." -ForegroundColor Green

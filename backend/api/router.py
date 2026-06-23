@@ -10,6 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any, Literal
 
+from config.settings import settings
 from core.exceptions import BiDAError
 from core.models import ApiSuccessResponse, TraceContext
 from core.tracing import get_trace_id
@@ -218,48 +219,90 @@ def create_routes(app, kg_system, risk_engine=None):
     from api.governance_routes import router as governance_router
     app.include_router(governance_router)
 
+    # ═══════════════════════════════════════════════════════════════
+    # [ALL] Authentication & Admin — real auth replacing mock endpoints
+    # ═══════════════════════════════════════════════════════════════
+    from api.auth_routes import router as auth_router
+    app.include_router(auth_router)
+
+    from api.admin_routes import router as admin_router
+    app.include_router(admin_router)
+
     @app.get("/health")
     def health(request: Request) -> dict[str, str]:
         return {"status": "ok", "traceId": getattr(request.state, "trace_id", get_trace_id())}
 
-    # ── Auth endpoints (mock) for Ant Design Pro login flow ──────
-
-    class LoginRequest(BaseModel):
-        username: str | None = None
-        password: str | None = None
-        type: str | None = None
-        autoLogin: bool | None = None
+    # ── Backward-compatible auth endpoints (proxy to real auth) ──
 
     @app.post("/api/login/account")
-    async def login_account(req: LoginRequest):
-        """Mock login — accept any credentials for development."""
-        if not req.username or not req.password:
-            return {"status": "error", "type": req.type or "account", "currentAuthority": "guest"}
-        return {"status": "ok", "type": req.type or "account", "currentAuthority": "admin"}
+    async def login_account_compat(request: Request):
+        """Compatibility: proxy POST /api/login/account → POST /api/v1/auth/login."""
+        import json as _json
+
+        body = await request.body()
+        try:
+            body_data = _json.loads(body) if body else {}
+        except _json.JSONDecodeError:
+            body_data = {}
+
+        username = body_data.get("username", "")
+        password = body_data.get("password", "")
+
+        # Fallback to mock login when auth is disabled (MySQL not available)
+        if not settings.AUTH_ENABLED:
+            if not username or not password:
+                return {"status": "error", "type": body_data.get("type", "account"), "currentAuthority": "guest"}
+            return {"status": "ok", "type": body_data.get("type", "account"), "currentAuthority": "admin"}
+
+        from api.admin_schemas import LoginRequest
+        from api.auth_routes import login as real_login
+
+        req = LoginRequest(
+            username=username,
+            password=password,
+            autoLogin=body_data.get("autoLogin", False),
+            type=body_data.get("type"),
+        )
+        return await real_login(req, request)
 
     @app.get("/api/currentUser")
-    async def current_user():
-        return {
-            "data": {
-                "name": "Admin",
-                "avatar": "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png",
-                "userid": "00000001",
-                "email": "admin@ant.design",
-                "signature": "Risk Management Platform Admin",
-                "title": "风控分析师",
-                "group": "风控平台",
-                "notifyCount": 12,
-                "unreadCount": 3,
-                "country": "China",
-                "access": "admin",
-                "phone": "138****8888",
-            },
-            "success": True,
-        }
+    async def current_user_compat(request: Request):
+        """Compatibility: proxy GET /api/currentUser → GET /api/v1/auth/me."""
+        if not settings.AUTH_ENABLED:
+            return {
+                "data": {
+                    "name": "Admin",
+                    "avatar": "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png",
+                    "userid": "00000001",
+                    "email": "admin@ant.design",
+                    "phone": "138****8888",
+                    "access": "admin",
+                },
+                "success": True,
+            }
+
+        from api.auth_routes import current_user as real_current_user
+        try:
+            return await real_current_user(request)
+        except Exception:
+            # Fallback if MySQL unavailable
+            return {
+                "data": {
+                    "name": "Admin",
+                    "userid": "00000001",
+                    "access": "admin",
+                },
+                "success": True,
+            }
 
     @app.post("/api/login/outLogin")
-    async def out_login():
-        return {"data": {}, "success": True}
+    async def out_login_compat(request: Request):
+        """Compatibility: proxy POST /api/login/outLogin → POST /api/v1/auth/logout."""
+        if not settings.AUTH_ENABLED:
+            return {"data": {}, "success": True}
+
+        from api.auth_routes import logout as real_logout
+        return await real_logout(request)
 
     @app.get("/api/v1/entities/search")
     async def search_entities(q: str, type: str = "COMPANY", limit: int = 30):

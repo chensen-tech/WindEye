@@ -678,7 +678,6 @@ const KnowledgeQA: React.FC = () => {
                       { label: '图谱视图', value: 'graph' },
                       { label: '治理报告', value: 'risk' },
                       { label: '合规分析', value: 'compliance' },
-                      ...(expandedCommunityResult ? [{ label: '群体图谱', value: 'community_graph' as const }] : []),
                     ]}
                     value={activeRightPanel}
                     onChange={(val) =>

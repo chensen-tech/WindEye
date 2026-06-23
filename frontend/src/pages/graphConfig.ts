@@ -1,5 +1,29 @@
 ﻿// graphConfig.ts
 import { Tag } from 'antd';
+export {
+  getPrimaryNodeType,
+  resolveLayer,
+  resolveNodeType,
+} from '@/utils/knowledgeGraph';
+export type {
+  GraphLayer,
+  GraphLayoutMode,
+  GraphLayoutSelection,
+} from '@/types/knowledgeGraph';
+
+export const GRAPH_LAYER_THEME = {
+  Subject: { label: '主体层', color: '#1677ff', background: 'rgba(22,119,255,0.055)' },
+  Event: { label: '事件层', color: '#faad14', background: 'rgba(250,173,20,0.065)' },
+  Feature: { label: '特征层', color: '#52c41a', background: 'rgba(82,196,26,0.055)' },
+  Regulation: { label: '法规层', color: '#722ed1', background: 'rgba(114,46,209,0.055)' },
+  Unknown: { label: '未归类', color: '#8c8c8c', background: 'rgba(140,140,140,0.05)' },
+} as const;
+
+export const GRAPH_LAYOUT_LIMITS = {
+  radialMaxNodes: 30,
+  semanticForceMaxNodes: 150,
+  displayNodeLimit: 150,
+} as const;
 
 // --- 接口定义 ---
 export interface LayerConfig {
@@ -63,12 +87,36 @@ export const GENERAL_CONFIG: LayerConfig = {
     nodeStyles: {
       'COMPANY': { color: '#FFC101', label: '公司', layer: 0 }, 
       'PERSON': { color: '#1890FF', label: '自然人', layer: 0 },
+      'PFCOMPANY': { color: '#722ED1', label: '私募公司', layer: 0 },
+      'PFUND': { color: '#008000', label: '私募基金', layer: 0 },
+      'SECURITY': { color: '#F5222D', label: '证券', layer: 0 },
+      'Actor': { color: '#2F54EB', label: '参与主体', layer: 0 },
+      'Account': { color: '#13C2C2', label: '账户', layer: 0 },
       'EVENT': { color: '#FF6B6B', label: '主事件', layer: 1 },
       'SUB_EVENT': { color: '#FF9999', label: '子事件', layer: 1 },
+      'SubEvent': { color: '#FF9999', label: '子事件', layer: 1 },
       'TIME': { color: '#FF8C00', label: '时间', layer: 1 },
+      'REGULATOR': { color: '#722ED1', label: '监管机构', layer: 1 },
+      'Means': { color: '#EB2F96', label: '手段', layer: 1 },
       'RiskFeature': { color: '#4CAF50', label: '风险特征', layer: 2 }, 
       'RiskFactor': { color: '#9C27B0', label: '风险因子', layer: 2 },
+      'AdvantageHolder': { color: '#73D13D', label: '优势持有方', layer: 2 },
+      'Influence': { color: '#95DE64', label: '影响', layer: 2 },
+      'DisadvantageHolder': { color: '#A0D911', label: '劣势承受方', layer: 2 },
+      'Advantage': { color: '#B7EB8F', label: '优势', layer: 2 },
+      'Regulation': { color: '#722ED1', label: '法规', layer: 3 },
+      'Law': { color: '#9254DE', label: '法律', layer: 3 },
       'Action': { color: '#45B7D1', label: '法规行为', layer: 3 },
+      'PartyWithResponsibility': { color: '#13C2C2', label: '责任主体', layer: 3 },
+      'Chapter': { color: '#B37FEB', label: '章节', layer: 3 },
+      'Section': { color: '#D3ADF7', label: '条款', layer: 3 },
+      'Responsibility': { color: '#36CFC9', label: '责任', layer: 3 },
+      'RegulatoryAuthority': { color: '#5CDBD3', label: '监管机构', layer: 3 },
+      'Restriction': { color: '#FF85C0', label: '限制', layer: 3 },
+      'PunishmentMeasure': { color: '#FF7875', label: '处罚措施', layer: 3 },
+      'Punishment': { color: '#FF4D4F', label: '处罚', layer: 3 },
+      'Violation': { color: '#CF1322', label: '违规行为', layer: 3 },
+      'Title': { color: '#ADC6FF', label: '标题', layer: 3 },
       'Unknown': { color: '#2196F3', label: '未知', layer: 0 } 
   },
     relationLabels: {
@@ -158,7 +206,10 @@ export const EVENT_CONFIG: LayerConfig = {
     'PERSON': { color: '#1890FF', label: '自然人' },
     'TIME': { color: '#52C41A', label: '时间' },
     'EVENT': { color: '#FF6B6B', label: '事件' },
+    'SUB_EVENT': { color: '#FF9999', label: '子事件' },
+    'SubEvent': { color: '#FF9999', label: '子事件' },
     'REGULATOR': { color: '#722ED1', label: '监管机构' },
+    'Means': { color: '#EB2F96', label: '手段' },
     'Unknown': { color: '#BFBFBF', label: '其他' }
   },
   relationLabels: {
@@ -178,8 +229,12 @@ export const FEATURE_CONFIG: LayerConfig = {
     pageTitle: '特征层图谱检索',
     apiPrefix: '/api/v1',
     nodeStyles: {
-      'Riskfeature': { color: '#FFC101', label: '风险特征' },
-      'Riskfactor': { color: '#1890FF', label: '风险因子' },
+      'RiskFeature': { color: '#4CAF50', label: '风险特征' },
+      'RiskFactor': { color: '#9C27B0', label: '风险因子' },
+      'AdvantageHolder': { color: '#73D13D', label: '优势持有方' },
+      'Influence': { color: '#95DE64', label: '影响' },
+      'DisadvantageHolder': { color: '#A0D911', label: '劣势承受方' },
+      'Advantage': { color: '#B7EB8F', label: '优势' },
       'Unknown': { color: '#BFBFBF', label: '未知' }
     },
     relationLabels: {
@@ -199,8 +254,19 @@ export const REGULATION_CONFIG: LayerConfig = {
     pageTitle: '法规层图谱检索',
     apiPrefix: '/api/v1',
     nodeStyles: {
-      'Regulation': { color: '#FFC101', label: '法规' },
-      'Law': { color: '#1890FF', label: '法律' },
+      'Regulation': { color: '#722ED1', label: '法规' },
+      'Law': { color: '#9254DE', label: '法律' },
+      'Action': { color: '#45B7D1', label: '法规行为' },
+      'PartyWithResponsibility': { color: '#13C2C2', label: '责任主体' },
+      'Chapter': { color: '#B37FEB', label: '章节' },
+      'Section': { color: '#D3ADF7', label: '条款' },
+      'Responsibility': { color: '#36CFC9', label: '责任' },
+      'RegulatoryAuthority': { color: '#5CDBD3', label: '监管机构' },
+      'Restriction': { color: '#FF85C0', label: '限制' },
+      'PunishmentMeasure': { color: '#FF7875', label: '处罚措施' },
+      'Punishment': { color: '#FF4D4F', label: '处罚' },
+      'Violation': { color: '#CF1322', label: '违规行为' },
+      'Title': { color: '#ADC6FF', label: '标题' },
       'Unknown': { color: '#BFBFBF', label: '未知' }
     },
     relationLabels: {

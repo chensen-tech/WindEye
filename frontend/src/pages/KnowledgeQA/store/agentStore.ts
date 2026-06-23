@@ -18,6 +18,7 @@ import type {
   ExpandedCommunityResult,
 } from '../types/api'
 import { saveEntityAlias, searchEntityCandidates, sendUnifiedStream } from '../api/agent'
+import { getNodeDisplayName } from '../components/graphStyles'
 
 const generateSessionId = () => `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 const ENTITY_ALIAS_STORAGE_KEY = 'windeye.entityAliases.v1'
@@ -108,6 +109,7 @@ export function normalizeSubgraphNodes(rawNodes: any[]): any[] {
 
     const props = n.properties || {}
     const normalizedType = nodeType
+    const displayName = getNodeDisplayName(n)
     return {
       id: String(n.id),
       type: normalizedType,
@@ -115,10 +117,10 @@ export function normalizeSubgraphNodes(rawNodes: any[]): any[] {
       entity_type: normalizedType,
       properties: props,
       raw: n,
-      label: n.label || n.title || props.title || props.name || props.COMPANY_NM || n.name || String(n.id),
-      title: n.title || props.title || props.name || props.COMPANY_NM || n.label || n.id,
-      name: n.name || props.name || props.COMPANY_NM || props.title || n.label || n.id,
-      zh_name: n.zh_name || props.zh_name || props.name,
+      label: displayName,
+      title: displayName,
+      name: displayName,
+      zh_name: n.zh_name || props.zh_name || displayName,
       overview: n.overview || props.overview || props.RISK_INFO || '',
       popularity: n.popularity ?? props.popularity,
       rating: n.rating ?? props.rating,
@@ -294,17 +296,7 @@ function extractAmbiguousShortMention(query: string): string | null {
 }
 
 function getMentionNodeName(node: any): string {
-  const props = node?.properties || {}
-  return String(
-    node?.name
-    || node?.title
-    || node?.label
-    || props.name
-    || props.COMPANY_NM
-    || props.PERSON_NM
-    || props.title
-    || ''
-  ).trim()
+  return getNodeDisplayName(node)
 }
 
 function getMentionNodeType(node: any): string {

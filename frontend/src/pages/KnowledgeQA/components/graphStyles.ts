@@ -1,5 +1,28 @@
 // Shared graph color constants — imported by both EnhancedGraphPanel and LegendPanel
 
+/**
+ * Universal node display name resolver.
+ *
+ * Priority (matches the actual Neo4j property layout across all 4 layers):
+ *   COMPANY_NM > PERSON_NM > name > title > zh_name > feature_nm > id
+ *
+ * All graph views and the agent store MUST use this function — no inline
+ * fallback chains that drift apart over time.
+ */
+export function getNodeDisplayName(node: any): string {
+  const props = node?.properties || {}
+  return String(
+    node?.COMPANY_NM || props.COMPANY_NM
+    || node?.PERSON_NM || props.PERSON_NM
+    || node?.name || props.name
+    || node?.title || props.title
+    || node?.zh_name || props.zh_name
+    || node?.feature_nm || props.feature_nm
+    || node?.label || props.label
+    || (node?.id ?? '')
+  ).trim()
+}
+
 export const NODE_TYPE_COLORS: Record<string, string> = {
   COMPANY: '#1890ff', PERSON: '#722ed1', EVENT: '#f5222d',
   SUB_EVENT: '#f5222d', TIME: '#8c8c8c', RiskFeature: '#52c41a',

@@ -1,6 +1,8 @@
 ﻿import type { RequestOptions } from '@@/plugin-request/request';
 import type { RequestConfig } from '@umijs/max';
 import { message, notification } from 'antd';
+import { history } from '@umijs/max';
+import { clearTokens, getAccessToken } from '@/auth/tokenStore';
 
 // 错误处理方案： 错误类型
 enum ErrorShowType {
@@ -72,7 +74,20 @@ export const errorConfig: RequestConfig = {
       } else if (error.response) {
         // Axios 的错误
         // 请求成功发出且服务器也响应了状态码，但状态代码超出了 2xx 的范围
-        message.error(`Response status:${error.response.status}`);
+        if (error.response.status === 401) {
+          clearTokens();
+          if (history.location.pathname !== '/user/login') {
+            const redirect = encodeURIComponent(
+              `${history.location.pathname}${history.location.search}`,
+            );
+            history.replace(`/user/login?redirect=${redirect}`);
+          }
+          message.error('登录状态已失效，请重新登录');
+        } else if (error.response.status === 403) {
+          message.error('无权限执行此操作');
+        } else {
+          message.error(`Response status:${error.response.status}`);
+        }
       } else if (error.request) {
         // 请求已经成功发起，但没有收到响应
         // \`error.request\` 在浏览器中是 XMLHttpRequest 的实例，
@@ -88,9 +103,13 @@ export const errorConfig: RequestConfig = {
   // 请求拦截器
   requestInterceptors: [
     (config: RequestOptions) => {
-      // 拦截请求配置，进行个性化处理。
-      const url = config?.url?.concat('?token=123');
-      return { ...config, url };
+      const token = getAccessToken();
+      return {
+        ...config,
+        headers: token
+          ? { ...config.headers, Authorization: `Bearer ${token}` }
+          : config.headers,
+      };
     },
   ],
 

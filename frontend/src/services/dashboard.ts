@@ -3,13 +3,19 @@
 export interface SummaryStats {
   total_nodes: number;
   total_relationships: number;
+  classified_nodes?: number;
+  unclassified_nodes?: number;
+  classified_relationships?: number;
+  unclassified_relationships?: number;
   layers: {
     layer: string;
     layer_code: string;
     node_count: number;
     rel_count: number;
-    node_types: Record<string, number>;
+    node_types: string[];
+    node_type_counts: Record<string, number>;
     rel_types: string[];
+    rel_type_counts: Record<string, number>;
     cross_layer_rels: Record<string, number>;
   }[];
 }

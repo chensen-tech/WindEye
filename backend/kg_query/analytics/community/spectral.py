@@ -24,10 +24,12 @@ logger = logging.getLogger(__name__)
 
 _ALL_VALID_LABELS_CLEAN: list[str] = []
 _LAYER_LABEL_MAP_REF: dict[str, list[str]] = {
-    "Subject": ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY"],
-    "Event": ["Event", "EVENT", "TIME", "REGULATOR"],
-    "Feature": ["Feature", "RiskFeature", "RiskFactor"],
-    "Regulation": ["Regulation", "Law", "Action"],
+    "Subject": ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY",
+                "PartyWithResponsibility", "Actor", "Account"],
+    "Event": ["Event", "EVENT", "Means"],
+    "Feature": ["Feature", "AdvantageHolder", "Influence",
+                "DisadvantageHolder", "Advantage"],
+    "Regulation": ["Regulation", "Law", "Action", "Chapter"],
 }
 _ALL_VALID_LABELS_CLEAN = [
     label for labels in _LAYER_LABEL_MAP_REF.values() for label in labels

@@ -249,6 +249,101 @@ export interface RiskPath {
   confidence?: number
 }
 
+// ── Standalone Risk Paths API types (governance_routes.py /risk-paths) ──
+
+export interface RiskPathEvidence {
+  node_id?: string
+  nodeId?: string
+  evidence_type?: string
+  evidenceType?: string
+  content: string
+  confidence: number
+}
+
+export interface EnrichedRiskPath {
+  pathId: string
+  riskLevel: 'high' | 'medium' | 'low'
+  score: number
+  confidence: number
+  pathType: string
+  communityPath: number[]
+  nodeIds: string[]
+  edgeIds: string[]
+  relations: string[]
+  affectedEntities: string[]
+  pathDescription: string
+  evidence: RiskPathEvidence[]
+}
+
+export interface CommunityRiskPath {
+  sourceCommunity: number
+  targetCommunity: number
+  riskLevel: 'high' | 'medium' | 'low'
+  score: number
+  pathIds: string[]
+  mainRelations: string[]
+  description: string
+}
+
+export interface PathViewModel {
+  highlightNodeIds?: string[]
+  highlightEdgeIds?: string[]
+  highlightCommunityIds?: number[]
+  defaultSelectedPathId?: string
+}
+
+export interface RiskPathsSummary {
+  seedNodeCount: number
+  nodeCount: number
+  edgeCount: number
+  communityCount: number
+  candidatePathCount: number
+  riskPathCount: number
+  highRiskCount: number
+  mediumRiskCount: number
+  lowRiskCount: number
+}
+
+export interface CommunityDiscoverySummary {
+  seedCommunityId: number | null
+  selectedMethod: string
+  communityCount: number
+  communityGraph: CommunityGraphData
+  entityCommunityMap: Record<string, CommunityMemberDetail>
+}
+
+export interface RiskPathsRequest {
+  seedNames: string[]
+  seedIds: string[]
+  maxHop: number
+  maxPathLength: number
+  method: string
+  communityMode: string
+  includeCommunityDiscovery: boolean
+  includeCommunityPath: boolean
+  includeNodePath: boolean
+  riskRelationWhitelist: string[]
+  subgraphPathLimit: number
+  riskPathLimit: number
+  maxBranchPerNode: number
+  minRiskScore: number
+  responseMode: string
+}
+
+export interface RiskPathsResponse {
+  success: boolean
+  traceId: string
+  elapsedMs?: number
+  summary: RiskPathsSummary
+  seedNodes: SubgraphNode[]
+  communityDiscovery: CommunityDiscoverySummary | null
+  riskPaths: EnrichedRiskPath[]
+  communityRiskPaths: CommunityRiskPath[]
+  viewModel: PathViewModel
+  warnings: string[]
+  error?: string
+}
+
 export interface AnomalyFinding {
   anomaly_type: string
   affected_entities: string[]
