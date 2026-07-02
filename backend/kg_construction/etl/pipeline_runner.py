@@ -149,7 +149,7 @@ class PipelineRunner:
         """Create a handler for the 'parse' stage.
 
         Reads files from the scraper data directory (data_collection/scrapers/data/...).
-        After successful parsing, deletes the processed files.
+        Raw files are kept until the import stage successfully writes to Neo4j.
         """
         def handler(source: str, run: PipelineRun) -> PipelineRun:
             import os
@@ -208,48 +208,36 @@ class PipelineRunner:
             # Store parsed records for next stage
             run.stats["_records"] = records
 
-            # ── Cleanup: delete processed files ONLY if parsing succeeded ──
-            if records:
-                for fpath in processed_files:
-                    try:
-                        os.remove(fpath)
-                    except OSError:
-                        pass
-                run.stats["files_cleaned"] = len(processed_files)
-            else:
-                run.stats["files_cleaned"] = 0
+            if not records:
                 run.stats["warning"] = "No text extracted from files — check PDF parser dependencies (PyMuPDF, pytesseract)"
 
             return run
         return handler
 
     def make_extract_handler(self) -> Callable:
-        """Create a handler for the 'extract' stage — calls Dify for subject extraction."""
+        """Create a handler for the 'extract' stage — local subject extraction."""
         def handler(source: str, run: PipelineRun) -> PipelineRun:
             records = run.stats.pop("_records", [])
             if not records:
                 raise ValueError("No parsed records available. Run 'parse' stage first.")
 
-            from data_collection.dify.dify_client import DifyClient
+            from kg_construction.extraction.subject_extractor import extract_and_align_subjects
 
-            client = DifyClient()
-            all_entities: list[dict[str, Any]] = []
-            for rec in records:
-                text = rec.get("text", "")
-                filename = rec.get("file", "")
-                if not text:
-                    continue
-                logger.info(f"Dify subject extraction from '{filename}' ({len(text)} chars)")
-                dify_result = client.run_workflow_for_stage(text, "subject_extraction", filename)
-                all_entities.append({
-                    "source_file": filename,
-                    "dify_output": dify_result,
-                })
+            texts = [
+                {"file": rec.get("file", ""), "text": rec.get("text", "")}
+                for rec in records
+                if rec.get("text")
+            ]
+            logger.info("Local subject extraction from %s parsed records", len(texts))
+            result = extract_and_align_subjects(texts)
+            all_entities = result["subjects"]
 
             run.records_processed = len(records)
             run.records_created = len(all_entities)
             run.stats["_entities"] = all_entities
-            run.stats["extraction_method"] = "dify"
+            run.stats["entities"] = all_entities
+            run.stats["subject_stats"] = result["stats"]
+            run.stats["extraction_method"] = "local_subject"
             run.stats["extraction_stage"] = "subject_extraction"
             return run
         return handler

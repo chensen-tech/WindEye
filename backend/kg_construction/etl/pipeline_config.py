@@ -1,7 +1,7 @@
 """Pipeline configuration — stage definitions and data source configs.
 
 Data source directories: data_collection/scrapers/data/{risk_events,risk_sentiment}/
-Files are cleaned up (deleted) after successful pipeline processing.
+Files stay in place until a pipeline run successfully writes them to Neo4j.
 """
 
 from __future__ import annotations

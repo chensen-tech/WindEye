@@ -1,4 +1,5 @@
 import { clearTokens, getAccessToken } from './tokenStore';
+import { isDevAuthBypassEnabled } from './devAuthBypass';
 
 let installed = false;
 
@@ -31,6 +32,8 @@ export function installAuthFetch(): void {
 
   function handleUnauthorized(input: RequestInfo | URL, response: Response): void {
     if (response.status !== 401 || !shouldAttachAuth(input)) return;
+    if (isDevAuthBypassEnabled) return;
+
     clearTokens();
     if (window.location.pathname === '/user/login') return;
     const redirect = encodeURIComponent(`${window.location.pathname}${window.location.search}`);

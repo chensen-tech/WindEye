@@ -21,15 +21,29 @@ logger = logging.getLogger(__name__)
 # ── Layer-to-label mappings ───────────────────────────────────────────
 
 LAYER_LABEL_MAP: dict[str, list[str]] = {
-    "Subject": ["Company", "Person", "Institution"],
+    "Subject": [
+        "Subject", "COMPANY", "BANK", "PERSON", "LEGAL_REP", "DIRECTOR",
+        "SUPERVISOR", "EXECUTIVE", "PFCOMPANY", "PFUND", "SECURITY",
+        "REGULATOR", "EXCHANGE", "Actor", "Account", "PLATFORM", "AI_PROVIDER",
+    ],
     "Event": ["Investment", "Litigation", "Penalty", "NewsEvent", "Event", "Action"],
     "Feature": ["RiskFeature", "RiskPattern"],
     "Regulation": ["Regulation", "Policy", "Action", "Chapter", "Section"],
 }
 
 ENTITY_TYPE_TO_LABEL: dict[str, str] = {
-    "COMPANY": "Company",
-    "PERSON": "Person",
+    "COMPANY": "COMPANY",
+    "BANK": "BANK",
+    "PERSON": "PERSON",
+    "LEGAL_REP": "LEGAL_REP",
+    "DIRECTOR": "DIRECTOR",
+    "SUPERVISOR": "SUPERVISOR",
+    "EXECUTIVE": "EXECUTIVE",
+    "PFCOMPANY": "PFCOMPANY",
+    "PFUND": "PFUND",
+    "SECURITY": "SECURITY",
+    "REGULATOR": "REGULATOR",
+    "EXCHANGE": "EXCHANGE",
     "INSTITUTION": "Institution",
     "REGULATION": "Regulation",
     "POLICY": "Policy",

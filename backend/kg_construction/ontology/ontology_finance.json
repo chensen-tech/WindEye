@@ -12,7 +12,7 @@
     "property_key": "name"
   },
   "layer_labels": {
-    "Subject":   ["Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY"],
+    "Subject":   ["Subject", "COMPANY", "BANK", "PERSON", "LEGAL_REP", "DIRECTOR", "SUPERVISOR", "EXECUTIVE", "PFCOMPANY", "PFUND", "SECURITY", "REGULATOR", "EXCHANGE", "Actor", "Account", "PLATFORM", "AI_PROVIDER"],
     "Event":     ["Event", "COMPANY", "PERSON", "TIME", "EVENT", "REGULATOR"],
     "Feature":   ["Feature", "Riskfeature", "Riskfactor"],
     "Regulation":["Regulation", "Law", "Action"],

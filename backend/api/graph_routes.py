@@ -349,6 +349,8 @@ LAYER_DISPLAY_NAMES = {
 LAYER_LABEL_MAP: dict[str, list[str]] = {
     "Subject": [
         "Subject", "COMPANY", "PERSON", "PFCOMPANY", "PFUND", "SECURITY",
+        "BANK", "REGULATOR", "EXCHANGE", "LEGAL_REP", "DIRECTOR",
+        "SUPERVISOR", "EXECUTIVE", "PLATFORM", "AI_PROVIDER",
         "Actor", "Account",
     ],
     "Event": [
@@ -559,10 +561,19 @@ def can_add_node_by_layer(
 
 NODE_TYPE_DISPLAY_NAMES = {
     "COMPANY": "企业",
+    "BANK": "银行",
     "PERSON": "自然人",
+    "LEGAL_REP": "法定代表人",
+    "DIRECTOR": "董事",
+    "SUPERVISOR": "监事",
+    "EXECUTIVE": "高级管理人员",
     "PFCOMPANY": "私募公司",
     "PFUND": "私募基金",
     "SECURITY": "证券",
+    "REGULATOR": "监管机构",
+    "EXCHANGE": "交易所",
+    "PLATFORM": "平台",
+    "AI_PROVIDER": "AI服务商",
     "Actor": "参与主体",
     "Account": "账户",
     "EVENT": "事件",

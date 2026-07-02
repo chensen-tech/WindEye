@@ -1,7 +1,6 @@
 import {
   BuildOutlined,
   CheckCircleOutlined,
-  ClearOutlined,
   CloseCircleOutlined,
   CloudDownloadOutlined,
   CloudUploadOutlined,
@@ -20,7 +19,6 @@ import {
 import { PageContainer } from '@ant-design/pro-components';
 import {
   App,
-  Alert,
   Badge,
   Button,
   Card,
@@ -60,8 +58,6 @@ import {
 import { useCrawlStore } from '../DataCollection/store/crawlStore';
 import { useCrawlSSE } from '../DataCollection/hooks/useCrawlSSE';
 import QuickInputPanel from '../DataCollection/components/QuickInputPanel';
-import ComplexInputPanel from '../DataCollection/components/ComplexInputPanel';
-import TemplatePanel from '../DataCollection/components/TemplatePanel';
 import CrawlProgress from '../DataCollection/components/CrawlProgress';
 import CrawlResult from '../DataCollection/components/CrawlResult';
 
@@ -99,6 +95,7 @@ interface SubjectEntity {
   id: string;
   name: string;
   type: string;
+  role?: string;
   confidence: number;
   sourceDoc: string;
   properties: Record<string, any>;
@@ -218,7 +215,6 @@ const KnowledgeBuild: React.FC = () => {
   const [importTab, setImportTab] = useState<'upload' | 'crawl'>('upload');
 
   // ─── Crawl store / SSE (from DataCollection) ──────────────────────
-  const crawlMode = useCrawlStore((s) => s.mode);
   const crawlRunning = useCrawlStore((s) => s.isRunning);
   const crawlResult = useCrawlStore((s) => s.result);
   const crawlDataType = useCrawlStore((s) => s.dataType);
@@ -226,32 +222,17 @@ const KnowledgeBuild: React.FC = () => {
   const crawlKeywords = useCrawlStore((s) => s.keywords);
   const crawlMaxPages = useCrawlStore((s) => s.maxPages);
   const crawlMaxFiles = useCrawlStore((s) => s.maxFiles);
-  const crawlNlQuery = useCrawlStore((s) => s.nlQuery);
-  const crawlParsedIntent = useCrawlStore((s) => s.parsedIntent);
-  const crawlTemplateId = useCrawlStore((s) => s.templateId);
-  const crawlSetMode = useCrawlStore((s) => s.setMode);
   const { startCrawl, cancelCrawl } = useCrawlSSE();
 
   const handleStartCrawl = () => {
     const payload: any = {
-      mode: crawlMode === 'template' ? 'template' : crawlMode === 'complex' ? 'complex' : 'quick',
+      mode: 'quick',
       data_type: crawlDataType,
       sources: crawlSources.length > 0 ? crawlSources : undefined,
       keywords: crawlKeywords.length > 0 ? crawlKeywords : undefined,
       max_pages: crawlMaxPages,
       max_files: crawlMaxFiles,
     };
-    if (crawlMode === 'complex') {
-      payload.natural_language_query = crawlNlQuery;
-      if (crawlParsedIntent) {
-        payload.sources = crawlParsedIntent.sources;
-        payload.keywords = crawlParsedIntent.keywords;
-        payload.max_pages = crawlParsedIntent.max_pages;
-      }
-    }
-    if (crawlMode === 'template') {
-      payload.template_id = crawlTemplateId;
-    }
     // Switch right panel to show crawl progress
     setActiveStage('data_import');
     startCrawl(payload);
@@ -314,9 +295,9 @@ const KnowledgeBuild: React.FC = () => {
 
     for (let i = 0; i < entities.length; i++) {
       const ent = entities[i];
-      const name = ent.name || ent.mention || ent.title || `实体_${i}`;
-      const entType = ent.type || ent.label || ent.entity_type || 'Unknown';
-      const id = ent.id || ent.kg_id || `ent_${i}`;
+      const name = ent.canonicalName || ent.normalizedName || ent.name || ent.mention || ent.title || `实体_${i}`;
+      const entType = ent.entityType || ent.type || ent.label || ent.entity_type || 'Unknown';
+      const id = ent.kgNodeId || ent.id || ent.kg_id || `ent_${i}`;
 
       if (seenIds.has(id)) continue;
       seenIds.add(id);
@@ -337,9 +318,21 @@ const KnowledgeBuild: React.FC = () => {
           id: String(id),
           name,
           type: entType,
+          role: ent.role || ent.properties?.role || '',
           confidence: ent.confidence || ent.score || 0.5,
-          sourceDoc: ent.source || ent.source_doc || '',
-          properties: ent.properties || ent.attributes || {},
+          sourceDoc: ent.sourceFile || ent.source || ent.source_doc || '',
+          properties: {
+            ...(ent.properties || ent.attributes || {}),
+            role: ent.role || ent.properties?.role || '',
+            status: ent.status || ent.properties?.status,
+            match_status: ent.matchStatus || ent.properties?.match_status,
+            matched_by: ent.matchedBy || ent.properties?.matched_by,
+            match_score: ent.score ?? ent.properties?.match_score,
+            linking: ent.linking || ent.properties?.linking,
+            evidence: ent.evidenceText || ent.properties?.evidence,
+            source_doc: ent.sourceFile || ent.source || ent.source_doc,
+            entity_type: entType,
+          },
         });
       }
     }
@@ -424,13 +417,13 @@ const KnowledgeBuild: React.FC = () => {
     setRegulations([]);
     setImportPreview(null);
     setImportResult(null);
-    addLog('data_import', `正在为 ${source} 启动 ETL 流水线...`, 'info');
+    addLog('data_import', `正在为 ${source} 启动 ETL 预处理流水线（不会写入 Neo4j，不会删除源文件）...`, 'info');
 
     const startTime = Date.now();
     let lastStage = '';
 
     try {
-      const res = await fetch(`/api/v1/pipeline/run?source=${encodeURIComponent(source)}`, { method: 'POST' });
+      const res = await fetch(`/api/v1/pipeline/run?source=${encodeURIComponent(source)}&end_stage=resolve`, { method: 'POST' });
       const data = await res.json();
       addLog('data_import', `流水线已触发: ${data.message}`, 'success');
       setOverallProgress(10);
@@ -457,8 +450,8 @@ const KnowledgeBuild: React.FC = () => {
             setRunning(false);
             setBuildStatus('completed');
             setOverallProgress(100);
-            setActiveStage('kg_import');
-            addLog('kg_import', 'ETL 流水线执行完成', 'success');
+            setActiveStage('subject_extraction');
+            addLog('subject_extraction', 'ETL 预处理完成，尚未写入 Neo4j，源文件已保留', 'success');
 
             // Fetch real entity data from the pipeline
             try {
@@ -543,7 +536,13 @@ const KnowledgeBuild: React.FC = () => {
       return;
     }
     setExtracting((prev) => ({ ...prev, [stage]: true }));
-    addLog(stage, `正在调用 Dify 工作流 API (${stage})...`, 'info');
+    addLog(
+      stage,
+      stage === 'subject_extraction'
+        ? '正在执行本地主体提取与 Neo4j 实体对齐...'
+        : `正在调用 Dify 工作流 API (${stage})...`,
+      'info',
+    );
     try {
       const res = await fetch(
         `/api/v1/pipeline/extract/${stage}?source=${encodeURIComponent(source)}`,
@@ -562,9 +561,10 @@ const KnowledgeBuild: React.FC = () => {
         const newSubjects: SubjectEntity[] = nodes.map((n: any, i: number) => ({
           id: n.id || `subj_${i}`,
           name: n.label || n.properties?.name || '',
-          type: n.type || 'Unknown',
+          type: n.type && n.type !== 'Unknown' ? n.type : (n.properties?.entity_type || 'Unknown'),
+          role: n.properties?.role || '',
           confidence: n.properties?.confidence || 0.85,
-          sourceDoc: source,
+          sourceDoc: n.properties?.source_doc || source,
           properties: n.properties || {},
         }));
         setSubjects(newSubjects);
@@ -811,21 +811,6 @@ const KnowledgeBuild: React.FC = () => {
                               )}
                             </div>
                           ))}
-                          <Button
-                            danger
-                            size="small"
-                            icon={<ClearOutlined />}
-                            onClick={async () => {
-                              for (const source of Object.keys(scannedFiles)) {
-                                await fetch(`/api/v1/pipeline/files/${source}`, { method: 'DELETE' });
-                              }
-                              setScannedFiles({});
-                              msg.success('已清空所有文件');
-                            }}
-                            style={{ marginTop: 4 }}
-                          >
-                            清空所有文件
-                          </Button>
                         </div>
                       )}
                     </div>
@@ -867,33 +852,10 @@ const KnowledgeBuild: React.FC = () => {
             },
             {
               key: 'crawl',
-              label: '智能采集',
+              label: '数据采集',
               children: (
                 <div>
-                  <div style={{ marginBottom: 12 }}>
-                    <Radio.Group
-                      value={crawlMode}
-                      onChange={(e) => crawlSetMode(e.target.value)}
-                      size="small"
-                      optionType="button"
-                      buttonStyle="solid"
-                    >
-                      <Radio.Button value="quick">快速采集</Radio.Button>
-                      <Radio.Button value="complex">智能采集</Radio.Button>
-                      <Radio.Button value="template">模板采集</Radio.Button>
-                    </Radio.Group>
-                  </div>
-
-                  {crawlMode === 'quick' && <QuickInputPanel />}
-                  {crawlMode === 'complex' && <ComplexInputPanel />}
-                  {crawlMode === 'template' && (
-                    <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                      <TemplatePanel />
-                      <div style={{ marginTop: 8, color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
-                        点击模板即可自动填充采集参数
-                      </div>
-                    </div>
-                  )}
+                  <QuickInputPanel />
 
                   <div style={{ marginTop: 16, textAlign: 'right' }}>
                     <Space>
@@ -934,7 +896,7 @@ const KnowledgeBuild: React.FC = () => {
                         }}
                         style={{ marginTop: 4 }}
                       >
-                        切换到文件上传，扫描并运行 ETL 流水线 →
+                        切换到文件上传，扫描并运行 ETL 流水线
                       </Button>
                     </div>
                   )}
@@ -1042,7 +1004,7 @@ const KnowledgeBuild: React.FC = () => {
         <>
           <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>
-              {importTab === 'crawl' ? '智能采集' : '数据导入结果'}
+              {importTab === 'crawl' ? '数据采集' : '数据导入结果'}
             </span>
             <Space>
               <Tag color="blue">文档数: {dataSources.length}</Tag>
@@ -1066,11 +1028,11 @@ const KnowledgeBuild: React.FC = () => {
                 </div>
               </Card>
             ) : (
-              <Empty description={importTab === 'crawl' ? '请先在左侧"智能采集"标签页中配置采集参数，然后点击"开始采集"' : '尚未导入数据。请先在左侧上传PDF文件或选择爬虫数据源，然后点击【开始构建】或扫描文件后点击【运行 ETL 流水线】。'}>
+              <Empty description={importTab === 'crawl' ? '请先在左侧"数据采集"标签页中选择四个网站来源，然后点击"开始采集"' : '尚未导入数据。请先在左侧上传PDF文件或选择爬虫数据源，然后点击【开始构建】或扫描文件后点击【运行 ETL 流水线】。'}>
                 <Space>
                   {importTab === 'crawl' ? (
                     <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => setImportTab('crawl')}>
-                      去智能采集
+                      去数据采集
                     </Button>
                   ) : (
                     <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleStartBuild}>开始构建</Button>
@@ -1119,14 +1081,22 @@ const KnowledgeBuild: React.FC = () => {
   const subjectColumns: ColumnsType<SubjectEntity> = [
     { title: '实体名称', dataIndex: 'name', key: 'name', width: 180, ellipsis: true, render: (t: string) => <strong>{t}</strong> },
     { title: '类型', dataIndex: 'type', key: 'type', width: 100, render: (t: string) => <Tag color={NODE_TYPE_COLORS[t] || '#888'}>{t}</Tag> },
+    { title: '角色', key: 'role', width: 120, ellipsis: true, render: (_: any, r: SubjectEntity) => r.role || r.properties?.role || '-' },
+    { title: '匹配状态', key: 'status', width: 120, render: (_: any, r: SubjectEntity) => {
+      const status = r.properties?.status || 'unresolved';
+      const matchStatus = r.properties?.match_status;
+      const color = status === 'resolved' ? 'green' : status === 'low_confidence' ? 'orange' : status === 'conflict' ? 'purple' : 'blue';
+      const text = matchStatus || (status === 'resolved' ? '已匹配' : status === 'low_confidence' ? '低置信' : status === 'conflict' ? '冲突' : '新增');
+      return <Tag color={color}>{text}</Tag>;
+    } },
+    { title: '匹配方式', key: 'matchedBy', width: 120, ellipsis: true, render: (_: any, r: SubjectEntity) => r.properties?.matched_by || '-' },
+    { title: '匹配分数', key: 'matchScore', width: 100, render: (_: any, r: SubjectEntity) => {
+      const score = Number(r.properties?.match_score || r.properties?.linking?.score || 0);
+      return score ? `${Math.round(score * 100)}%` : '-';
+    } },
     { title: '置信度', dataIndex: 'confidence', key: 'confidence', width: 120, render: (v: number) => <Progress percent={Math.round(v * 100)} size="small" strokeColor={v > 0.9 ? '#52c41a' : v > 0.8 ? '#faad14' : '#f5222d'} /> },
+    { title: '来源证据', key: 'evidence', width: 220, ellipsis: true, render: (_: any, r: SubjectEntity) => r.properties?.evidence || '-' },
     { title: '来源文档', dataIndex: 'sourceDoc', key: 'sourceDoc', width: 130, ellipsis: true },
-    { title: '关键属性', key: 'props', width: 200, ellipsis: true, render: (_: any, r: SubjectEntity) => (
-      <Space size={4} wrap>
-        {Object.entries(r.properties).slice(0, 2).map(([k, v]) => <Tag key={k} style={{ fontSize: 11 }}>{k}: {String(v).slice(0, 15)}</Tag>)}
-        {Object.keys(r.properties).length > 2 && <Tag>...</Tag>}
-      </Space>
-    )},
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, r: SubjectEntity) => (
@@ -1148,17 +1118,21 @@ const KnowledgeBuild: React.FC = () => {
             onClick={() => runExtraction('subject_extraction')}
             disabled={selectedCrawlers.length === 0 || pipelineRunning}
           >
-            Dify 提取
+            本地提取
           </Button>
           <Button size="small" icon={<ExportOutlined />} disabled={subjects.length === 0}>导出CSV</Button>
         </Space>
       </div>
 
-      <Row gutter={12} style={{ marginBottom: 16 }}>
-        <Col span={6}><Card size="small"><Statistic title="实体总数" value={subjects.length} valueStyle={{ fontSize: 20, color: '#1890ff' }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="COMPANY" value={subjects.filter((s) => s.type === 'COMPANY').length} valueStyle={{ fontSize: 20, color: '#FFC101' }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="PERSON" value={subjects.filter((s) => s.type === 'PERSON').length} valueStyle={{ fontSize: 20, color: '#1890FF' }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="PFCOMPANY/PFUND" value={subjects.filter((s) => s.type === 'PFCOMPANY' || s.type === 'PFUND').length} valueStyle={{ fontSize: 20, color: '#722ED1' }} /></Card></Col>
+      <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
+        <Col span={3}><Card size="small"><Statistic title="实体总数" value={subjects.length} valueStyle={{ fontSize: 18, color: '#1890ff' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="COMPANY" value={subjects.filter((s) => s.type === 'COMPANY').length} valueStyle={{ fontSize: 18, color: '#FFC101' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="BANK" value={subjects.filter((s) => s.type === 'BANK').length} valueStyle={{ fontSize: 18, color: '#13C2C2' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="SECURITY" value={subjects.filter((s) => s.type === 'SECURITY').length} valueStyle={{ fontSize: 18, color: '#1890FF' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="PFUND/管理人" value={subjects.filter((s) => ['PFCOMPANY', 'PFUND'].includes(s.type)).length} valueStyle={{ fontSize: 18, color: '#722ED1' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="PERSON" value={subjects.filter((s) => ['PERSON', 'LEGAL_REP', 'DIRECTOR', 'SUPERVISOR', 'EXECUTIVE'].includes(s.type)).length} valueStyle={{ fontSize: 18, color: '#2F54EB' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="REGULATOR" value={subjects.filter((s) => ['REGULATOR', 'EXCHANGE'].includes(s.type)).length} valueStyle={{ fontSize: 18, color: '#FA541C' }} /></Card></Col>
+        <Col span={3}><Card size="small"><Statistic title="已匹配/低置信" value={`${subjects.filter((s) => s.properties?.status === 'resolved').length}/${subjects.filter((s) => s.properties?.status === 'low_confidence').length}`} valueStyle={{ fontSize: 18, color: '#52C41A' }} /></Card></Col>
       </Row>
 
       {subjects.length === 0 ? (

@@ -62,6 +62,39 @@ def _serialize_run(run: dict[str, Any], include_data: bool = False) -> dict[str,
     return safe
 
 
+def _source_import_succeeded(runs: list[Any]) -> bool:
+    """Return true only when the import stage really wrote to Neo4j cleanly."""
+    import_run = next((r for r in runs if getattr(r, "stage", "") == "import"), None)
+    if not import_run:
+        return False
+    if getattr(import_run, "status", "") != "completed":
+        return False
+    if getattr(import_run, "records_created", 0) <= 0:
+        return False
+
+    stats = getattr(import_run, "stats", {}) or {}
+    errors = getattr(import_run, "errors", []) or []
+    if stats.get("import_errors"):
+        return False
+    if stats.get("cypher_file"):
+        return False
+    if errors:
+        return False
+    return True
+
+
+def _cleanup_source_after_confirmed_import(source: str, runs: list[Any], confirmed_import: bool) -> int:
+    """Clean crawler cache only after an explicit user-confirmed import."""
+    if not confirmed_import:
+        return 0
+    if not _source_import_succeeded(runs):
+        return 0
+
+    from kg_construction.etl.pipeline_config import cleanup_source_files
+
+    return cleanup_source_files(source)
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get("/status")
@@ -154,6 +187,7 @@ async def trigger_pipeline_run(
     source: str = Query(..., description="Data source key (e.g. 'sse_risk')"),
     start_stage: str | None = Query(default=None, description="Stage to start from"),
     end_stage: str | None = Query(default=None, description="Stage to end at"),
+    confirmed_import: bool = Query(default=False, description="Allow Neo4j import and source cleanup only after user confirmation"),
     background_tasks: BackgroundTasks = None,
 ):
     """Trigger a pipeline run for the specified data source.
@@ -171,6 +205,16 @@ async def trigger_pipeline_run(
     if source not in DATA_SOURCE_CONFIGS:
         available = list(DATA_SOURCE_CONFIGS.keys())
         raise HTTPException(status_code=404, detail=f"Unknown source '{source}'. Available: {available}")
+
+    if not confirmed_import and end_stage in {"import", "index"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Neo4j import requires explicit confirmed_import=true.",
+        )
+
+    effective_end_stage = end_stage
+    if not confirmed_import and effective_end_stage is None:
+        effective_end_stage = "resolve"
 
     config = get_pipeline_config()
     runner = PipelineRunner(config)
@@ -224,7 +268,8 @@ async def trigger_pipeline_run(
         _current_run = {
             "source": source,
             "start_stage": start_stage,
-            "end_stage": end_stage,
+            "end_stage": effective_end_stage,
+            "confirmed_import": confirmed_import,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "status": "running",
         }
@@ -232,7 +277,12 @@ async def trigger_pipeline_run(
     async def _run_pipeline():
         global _current_run
         try:
-            runs = runner.run(source, start_stage=start_stage, end_stage=end_stage)
+            runs = runner.run(source, start_stage=start_stage, end_stage=effective_end_stage)
+            cleaned_count = _cleanup_source_after_confirmed_import(source, runs, confirmed_import)
+            if cleaned_count:
+                import_run = next((r for r in runs if getattr(r, "stage", "") == "import"), None)
+                if import_run:
+                    import_run.stats["files_cleaned_after_import"] = cleaned_count
             serialized = [_serialize_run(r.__dict__, include_data=True) for r in runs]
             _pipeline_runs.insert(0, {"source": source, "stages": serialized, "completed_at": datetime.now(timezone.utc).isoformat()})
         except Exception as e:
@@ -454,8 +504,16 @@ async def list_source_files(source: str):
 
 
 @router.delete("/files/{source}")
-async def cleanup_source_files(source: str):
-    """Delete all files in a data source directory (after processing)."""
+async def cleanup_source_files(
+    source: str,
+    confirmed_import: bool = Query(default=False, description="Must be true after user-confirmed Neo4j import"),
+):
+    """Delete source files only after an explicit user-confirmed Neo4j import."""
+    if not confirmed_import:
+        raise HTTPException(
+            status_code=400,
+            detail="Refusing to delete source files before explicit user-confirmed Neo4j import.",
+        )
     try:
         from kg_construction.etl.pipeline_config import DATA_SOURCE_CONFIGS, cleanup_source_files as _cleanup
 
@@ -499,7 +557,6 @@ async def extract_stage(
         )
 
     try:
-        from data_collection.dify.dify_client import DifyClient
         from data_collection.dify.dify_pdf_bridge import chunk_regulation_text
         from kg_construction.etl.pipeline_config import DATA_SOURCE_CONFIGS
     except ImportError as e:
@@ -558,7 +615,38 @@ async def extract_stage(
             "edges": [],
         }
 
+    if stage == "subject_extraction":
+        from kg_construction.extraction.subject_extractor import (
+            extract_and_align_subjects,
+            subjects_to_frontend_nodes,
+        )
+
+        result = extract_and_align_subjects(texts)
+        subjects = result["subjects"]
+        response_nodes = subjects_to_frontend_nodes(subjects)
+        stats = result["stats"]
+        logger.info(
+            "Local subject extraction complete: %s subjects (%s resolved, %s unresolved)",
+            stats.get("total", 0),
+            stats.get("resolved", 0),
+            stats.get("unresolved", 0),
+        )
+        return {
+            "success": True,
+            "stage": stage,
+            "source": source,
+            "extractor": "local",
+            "nodes": response_nodes,
+            "edges": [],
+            "node_count": len(response_nodes),
+            "edge_count": 0,
+            "stats": stats,
+            "subjects": subjects,
+        }
+
     # Run Dify extraction for this stage
+    from data_collection.dify.dify_client import DifyClient
+
     client = DifyClient()
     all_results: list[dict[str, Any]] = []
 

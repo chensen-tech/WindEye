@@ -14,7 +14,6 @@ class SourceMatcher:
         },
         "risk_sentiment": {
             "stockstar": {"keywords": False, "date_range": False, "max_pages": 10, "label": "证券之星财经新闻"},
-            "eastmoney": {"keywords": False, "date_range": False, "max_pages": 10, "label": "东方财富财经新闻"},
         },
     }
 

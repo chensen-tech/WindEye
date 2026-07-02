@@ -13,6 +13,7 @@ import {
 } from '@/components';
 import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/api';
 import defaultSettings from '../config/defaultSettings';
+import { devAuthUser, isDevAuthBypassEnabled } from './auth/devAuthBypass';
 import { installAuthFetch } from './auth/installAuthFetch';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
@@ -33,6 +34,10 @@ export async function getInitialState(): Promise<{
   fetchUserInfo?: () => Promise<API.CurrentUser | undefined>;
 }> {
   const fetchUserInfo = async () => {
+    if (isDevAuthBypassEnabled) {
+      return devAuthUser;
+    }
+
     try {
       const msg = await queryCurrentUser({
         skipErrorHandler: true,
@@ -45,6 +50,19 @@ export async function getInitialState(): Promise<{
   };
   // 如果不是登录页面，执行
   const { location } = history;
+  if (isDevAuthBypassEnabled) {
+    if ([loginPath, '/user/register', '/user/register-result'].includes(location.pathname)) {
+      const redirect = new URLSearchParams(location.search).get('redirect');
+      history.replace(redirect?.startsWith('/') ? redirect : '/welcome');
+    }
+
+    return {
+      fetchUserInfo,
+      currentUser: devAuthUser,
+      settings: defaultSettings as Partial<LayoutSettings>,
+    };
+  }
+
   if (
     ![loginPath, '/user/register', '/user/register-result'].includes(
       location.pathname,
@@ -86,6 +104,13 @@ export const layout: RunTimeLayoutConfig = ({
     footerRender: () => <Footer />,
     onPageChange: () => {
       const { location } = history;
+      if (isDevAuthBypassEnabled) {
+        if (location.pathname === loginPath) {
+          history.replace('/welcome');
+        }
+        return;
+      }
+
       // 如果没有登录，重定向到 login
       if (!initialState?.currentUser && location.pathname !== loginPath) {
         history.push(loginPath);
