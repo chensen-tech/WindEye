@@ -1281,22 +1281,7 @@ async def extract_stage(
     merged_text = "\n\n".join(item.get("text", "") for item in texts)
     client = None
 
-    if stage == "event_extraction":
-        _, _, is_risk_event = _classify_event(merged_text)
-        if not is_risk_event:
-            all_results = _build_event_fallback_results(merged_text, source)
-            fallback_used = bool(all_results)
-            logger.info(
-                "Stage=%s source=%s uses local fallback because the file is not a risk-enforcement announcement.",
-                stage,
-                source,
-            )
-    elif stage == "feature_extraction" and "fallback_generated" in merged_text:
-        all_results = _build_feature_fallback_results(merged_text, source)
-        fallback_used = bool(all_results)
-        logger.info("Stage=%s source=%s uses local fallback based on fallback event JSON.", stage, source)
-
-    # Run Dify extraction for this stage when local fallback was not enough.
+    # Run Dify extraction for this stage.
     if not all_results:
         from data_collection.dify.dify_client import DifyClient
 
@@ -1324,35 +1309,24 @@ async def extract_stage(
                 if results:
                     all_results.extend(results)
 
-    if not all_results:
-        if stage == "event_extraction":
-            all_results = _build_event_fallback_results(merged_text, source)
-            fallback_used = bool(all_results)
-        elif stage == "feature_extraction":
-            all_results = _build_feature_fallback_results(merged_text, source)
-            fallback_used = bool(all_results)
-        if fallback_used:
-            logger.warning("Dify returned no results for stage=%s source=%s; local fallback generated %s items", stage, source, len(all_results))
-
     # Deduplicate
     from data_collection.dify.dify_pdf_bridge import _deduplicate_results
     deduped = _deduplicate_results(all_results)
     if not deduped:
-        output_dir = KG_OUTPUT_DIR / KG_OUTPUT_STAGES.get(stage, stage)
         dify_reason = getattr(client, "last_error", "") if client else ""
-        dify_reason = dify_reason or "Dify 未返回可解析的节点或关系，且本地兜底也未能生成结果"
+        dify_reason = dify_reason or "Dify 未返回可解析的节点或关系"
         return {
-            "success": False,
+            "success": True,
             "stage": stage,
             "source": source,
-            "message": f"Dify 未生成可入库的节点或关系，JSON 未保存。原因：{dify_reason}",
+            "message": f"Dify 无结果（普通文件）。原因：{dify_reason}",
             "nodes": [],
             "edges": [],
             "node_count": 0,
             "edge_count": 0,
             "cypher_statements": 0,
             "json_artifact": None,
-            "output_dir": str(output_dir),
+            "output_dir": str(KG_OUTPUT_DIR / KG_OUTPUT_STAGES.get(stage, stage)),
             "dify_error": dify_reason,
         }
     json_artifact = _write_kg_json_artifact(stage, source, deduped) if deduped else None
