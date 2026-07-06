@@ -1,0 +1,730 @@
+app:
+  description: ''
+  icon: heart
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 金融风险事理图谱完整的流程3
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/ollama:0.0.7@8fc496b3892344da47db6125c76fc0dbfd8020753f198032751d83f561d9443e
+    version: null
+kind: app
+version: 0.4.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: document-extractor
+      id: 1762085820022-source-1762090677132-target
+      selected: false
+      source: '1762085820022'
+      sourceHandle: source
+      target: '1762090677132'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 17620900417440-source-1762096464351-target
+      selected: false
+      source: '17620900417440'
+      sourceHandle: source
+      target: '1762096464351'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: document-extractor
+        targetType: knowledge-retrieval
+      id: 1762090677132-source-1762140132269-target
+      selected: false
+      source: '1762090677132'
+      sourceHandle: source
+      target: '1762140132269'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1762140132269-source-17620900417440-target
+      selected: false
+      source: '1762140132269'
+      sourceHandle: source
+      target: '17620900417440'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 1762096464351-source-1762157357813-target
+      selected: false
+      source: '1762096464351'
+      sourceHandle: source
+      target: '1762157357813'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1762157357813-source-1765265461787-target
+      selected: false
+      source: '1762157357813'
+      sourceHandle: source
+      target: '1765265461787'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: 1765265461787-source-1765265735456-target
+      selected: false
+      source: '1765265461787'
+      sourceHandle: source
+      target: '1765265735456'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 输入事件文件
+        type: start
+        variables:
+        - allowed_file_extensions: []
+          allowed_file_types:
+          - document
+          allowed_file_upload_methods:
+          - local_file
+          - remote_url
+          default: ''
+          hint: ''
+          label: 上传文件列表（支持PDF/HTML/XLSX/DOC等）
+          max_length: 10
+          options: []
+          placeholder: ''
+          required: true
+          type: file
+          variable: file_list
+      height: 87
+      id: '1762085820022'
+      position:
+        x: -274.59793533095575
+        y: -416.56458444763894
+      positionAbsolute:
+        x: -274.59793533095575
+        y: -416.56458444763894
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1762140132269'
+          - result
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: deepseek-r1:8b
+          provider: langgenius/ollama/ollama
+        prompt_config:
+          jinja2_variables: []
+        prompt_template:
+        - edition_type: basic
+          id: 141521cc-91bf-4ea0-986b-eeb186248e6d
+          jinja2_text: ''
+          role: system
+          text: '你是专业的金融风险知识图谱生成器，必须严格遵守以下全部规则，任何一条违反都视为生成失败。
+
+            【输入文本】
+
+            {{input_text}}
+
+            【五类风险定义】
+
+            {{#context#}}
+
+            【提取铁律】
+
+            1.时间提取：仅提取正文描述的行为发生时间，
+
+            （1）严格禁止：标题时间、书名号时间、公告落款时间、年报名称时间
+
+            （2）时间缺失处理：无明确时间的，TIME_ANCHOR 和 PERIOD_INFO 填"未知"，不创建TIME节点和OCCUR_AT关系
+
+            2. 必须提取全部公司、人物、监管机构，遗漏即失败。
+
+            3. 事件原子级拆分：
+
+            （1）严格执行标题层级拆分：每个"(一)、(二)..."级别的小标题必须拆分为独立事件节点。
+
+            （2）禁止事件合并：不同小标题下的内容不得合并为同一事件。
+
+            （3）事件命名规范：事件标题直接采用小标题核心内容。
+
+            （4）保持事件颗粒度：每个事件节点只描述一个具体行为/事实.
+
+            4. 风险类型只能五选一，禁止自创。
+
+            【关系体系（必须全部使用以下标签）】
+
+            - PARTICIPATE_IN    → 公司参与或者实施行为 → EVENT
+
+            - PARTICIPATE_IN    → 人物参与或者实施行为 → EVENT
+
+            - 因果         → 因果：该事件引发另一事件 → EVENT
+
+            - 时序         → 时序：先发生 → 后发生
+
+            - 条件         → 条件：在前一事件成立的前提下 → 后一事件
+
+            - 反转         → 反转：打破预期、否定了前事件
+
+            - 任职         → 任职关系（人物 → 公司）
+
+            - 发生于      → 事件发生时间（EVENT → TIME，仅在有明确时间时使用）
+
+
+            【强制输出规则】
+
+            1. 只输出纯 JSONL，每行一个完整 JSON，禁止任何解释、markdown、```json、统计。
+
+            2. 所有节点在前，所有关系在后。
+
+            3. 节点顺序：COMPANY → PERSON → REGULATOR → EVENT → TIME（同类按原文首次出现顺序）
+
+            【节点模板（严格执行）】
+
+            {"type":"node","id":"c_随机9位","labels":["COMPANY"],"properties":{"COMPANY_NM":"完整公司名称"}}
+
+            {"type":"node","id":"p_随机9位","labels":["PERSON"],"properties":{"PERSON_NM":"姓名或某高管","POSITION":"具体职位","AFFILIATION":"所属完整公司名"}}
+
+            {"type":"node","id":"rg_随机9位","labels":["REGULATOR"],"properties":{"REGULATOR_NM":"完整的监管机构名称","ENTITY_ROLE":"监管方"}}
+
+            {"type":"node","id":"e_随机10位","labels":["EVENT"],"properties":{"title":"15字以内标题","text":"完整原文事件描述（基于原文，要详细）","event_category":"高价超募/抱团压价/信披违规/操纵市场/重大舆情","action_type":"具体违规行为","TIME_ANCHOR":"","PERIOD_INFO":"时间段或未知"}}
+
+            {"type":"node","id":"t_随机8位","labels":["TIME"],"properties":{"text":"原文时间表达","标准化时间":"YYYY-MM-DD","TIME_TYPE":"absolute"}}
+
+            【关系模板（必须支持以下全部标签）】
+
+            {"id":"r_随机10位","type":"relationship","label":"PARTICIPATE_IN","start":{"id":"对应公司节点id","labels":["COMPANY"]},"end":{"id":"对应事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"PARTICIPATE_IN","start":{"id":"对应人物节点id","labels":["PERSON"]},"end":"id":"对应事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"因果","start":{"id":"对应起始事件节点id","labels":["EVENT"]},"end":{"id":"对应目标事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"时序","start":{"id":"对应先发生事件节点id","labels":["EVENT"]},"end":{"id":"对应后发生事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"条件","start":{"id":"对应条件事件节点id","labels":["EVENT"]},"end":{"id":"对应结果事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"反转","start":{"id":"对应被反转事件节点id","labels":["EVENT"]},"end":{"id":"对应反转事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"任职","start":{"id":"对应人物节点id","labels":["PERSON"]},"end":{"id":"对应公司节点id","labels":["COMPANY"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"发生于","start":{"id":"对应事件节点id","labels":["EVENT"]},"end":{"id":"对应时间节点id","labels":["TIME"]}}
+
+
+            立即开始输出，从第一个 COMPANY 节点开始，禁止出现任何非 JSONL 内容。'
+        selected: false
+        structured_output_enabled: false
+        title: 构建事理图谱
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17620900417440'
+      position:
+        x: -274.59793533095575
+        y: -242.6999202056164
+      positionAbsolute:
+        x: -274.59793533095575
+        y: -242.6999202056164
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        is_array_file: false
+        selected: false
+        title: 提取文件中的文本
+        type: document-extractor
+        variable_selector:
+        - '1762085820022'
+        - file_list
+      height: 92
+      id: '1762090677132'
+      position:
+        x: 20.20252052156684
+        y: -416.56458444763894
+      positionAbsolute:
+        x: 20.20252052156684
+        y: -416.56458444763894
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: deepseek-r1:8b
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: 7c72e1be-0a6c-4bf9-b2c2-89fb72afd715
+          role: system
+          text: '你是专业的【金融风险事理图谱质量验证器】，你的唯一任务是：
+
+            对一份可能存在错误、遗漏、颗粒度过粗、关系混淆的图谱进行100%严格校验，并基于原始文本重新生成一份准确、完整、原子级、无幻觉、可直接用于风控的最终图谱。
+
+
+            【输入】
+
+            1. 原始文本：{{#1762090677132.text#}}
+
+            2. 待验证图谱（JSONL格式）：{{#17620900417440.text#}}
+
+
+            【五类风险定义】
+
+            高价超募 / 抱团压价 / 信披违规 / 操纵市场 / 重大舆情
+
+
+            【终极校验与纠错铁律（全部强制执行）】
+
+            1.时间提取：仅提取正文描述的真实行为发生时间，（1）严格禁止：标题时间、书名号时间、公告落款时间、年报名称时间
+
+            （2）时间缺失处理：无明确时间的，TIME_ANCHOR 和 PERIOD_INFO 填"未知"，不创建TIME节点和OCCUR_AT关系
+
+            2. 实体完整性：必须补全原文中出现的所有公司、人物、监管机构，遗漏即失败
+
+            3. 事件原子级拆分：
+
+            （1）严格执行标题层级拆分：每个"(一)、(二)..."级别的小标题必须拆分为独立事件节点。
+
+            （2）禁止事件合并：不同小标题下的内容不得合并为同一事件。
+
+            （3）事件命名规范：事件标题直接采用小标题核心内容。
+
+            （4）保持事件颗粒度：每个事件节点只描述一个具体行为/事实.
+
+            4. 风险分类只能五选一，禁止自创
+
+            【关系体系（必须全部使用以下标签）】
+
+            - PARTICIPATE_IN    → 公司参与或者实施行为 → EVENT
+
+            - PARTICIPATE_IN    → 人物参与或者实施行为 → EVENT
+
+            - 因果         → 因果：该事件引发另一事件 → EVENT
+
+            - 时序         → 时序：先发生 → 后发生
+
+            - 条件         → 条件：在前一事件成立的前提下 → 后一事件
+
+            - 反转         → 反转：打破预期、否定了前事件
+
+            - 任职         → 任职关系（人物 → 公司）
+
+            - 发生于      → 事件发生时间（EVENT → TIME，仅在有明确时间时使用）
+
+
+            【强制输出规则】
+
+            1. 只输出纯 JSONL，每行一个完整 JSON，禁止任何解释、markdown、```json、统计。
+
+            2. 所有节点在前，所有关系在后。
+
+            3. 节点顺序：COMPANY → PERSON → REGULATOR → EVENT → TIME（同类按原文首次出现顺序）
+
+            【节点模板（严格执行）】
+
+            {"type":"node","id":"c_随机9位","labels":["COMPANY"],"properties":{"COMPANY_NM":"完整公司名称"}}
+
+            {"type":"node","id":"p_随机9位","labels":["PERSON"],"properties":{"PERSON_NM":"姓名或某高管","POSITION":"具体职位","AFFILIATION":"所属完整公司名"}}
+
+            {"type":"node","id":"rg_随机9位","labels":["REGULATOR"],"properties":{"REGULATOR_NM":"完整的监管机构名称","ENTITY_ROLE":"监管方"}}
+
+            {"type":"node","id":"e_随机10位","labels":["EVENT"],"properties":{"title":"15字以内标题","text":"完整原文事件描述（基于原文，要详细）","event_category":"高价超募/抱团压价/信披违规/操纵市场/重大舆情","action_type":"具体违规行为","TIME_ANCHOR":"","PERIOD_INFO":"时间段或未知"}}
+
+            {"type":"node","id":"t_随机8位","labels":["TIME"],"properties":{"text":"原文时间表达","标准化时间":"YYYY-MM-DD","TIME_TYPE":"absolute"}}
+
+            【关系模板（必须支持以下全部标签）】
+
+            {"id":"r_随机10位","type":"relationship","label":"PARTICIPATE_IN","start":{"id":"对应公司节点id","labels":["COMPANY"]},"end":{"id":"对应事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"PARTICIPATE_IN","start":{"id":"对应人物节点id","labels":["PERSON"]},"end":"id":"对应事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"因果","start":{"id":"对应起始事件节点id","labels":["EVENT"]},"end":{"id":"对应目标事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"时序","start":{"id":"对应先发生事件节点id","labels":["EVENT"]},"end":{"id":"对应后发生事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"条件","start":{"id":"对应条件事件节点id","labels":["EVENT"]},"end":{"id":"对应结果事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"反转","start":{"id":"对应被反转事件节点id","labels":["EVENT"]},"end":{"id":"对应反转事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"任职","start":{"id":"对应人物节点id","labels":["PERSON"]},"end":{"id":"对应公司节点id","labels":["COMPANY"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"发生于","start":{"id":"对应事件节点id","labels":["EVENT"]},"end":{"id":"对应时间节点id","labels":["TIME"]}}
+
+
+            立即开始输出，从第一个 COMPANY 节点开始，禁止出现任何非 JSONL 内容。'
+        selected: false
+        title: 图谱补全和验证
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1762096464351'
+      position:
+        x: 20.20252052156684
+        y: -242.6999202056164
+      positionAbsolute:
+        x: 20.20252052156684
+        y: -242.6999202056164
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        dataset_ids:
+        - bUlkzXwLtevDYWgeWk5SHyHkeL/RhzpZY3sU2EVLYM6quy5G4yB/bXtMCWQ9g59j
+        multiple_retrieval_config:
+          reranking_enable: false
+          reranking_mode: weighted_score
+          top_k: 4
+          weights:
+            keyword_setting:
+              keyword_weight: 1
+            vector_setting:
+              embedding_model_name: bge-m3
+              embedding_provider_name: langgenius/ollama/ollama
+              vector_weight: 0
+            weight_type: customized
+        query_variable_selector:
+        - '1762090677132'
+        - text
+        retrieval_mode: multiple
+        selected: true
+        title: 识别风险类型（五类）
+        type: knowledge-retrieval
+      height: 89
+      id: '1762140132269'
+      position:
+        x: 315.775893821351
+        y: -416.56458444763894
+      positionAbsolute:
+        x: 315.775893821351
+        y: -416.56458444763894
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: deepseek-r1:8b
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: 9380504a-90e4-4958-9089-aa114a7ac5c6
+          role: system
+          text: '你是专业的【金融风险事理图谱终极融合生成器】，你的唯一任务是：
+
+            接收原始图谱 + 补全图谱 + 原文三份材料，进行严格对比、查漏补缺、纠错去重后，基于原文重新生成一份100%准确、原子级、关系清晰、可直接用于风控分析的最终图谱。
+
+
+            【输入】
+
+            1. 原始图谱（JSONL）：{{#17620900417440.text#}}
+
+            2. 补全图谱（JSONL）：{{#1762096464351.text#}}
+
+            3. 原文文本：{{#1762090677132.text#}}
+
+            【五类风险】
+
+            高价超募 / 抱团压价 / 信披违规 / 操纵市场 / 重大舆情
+
+
+            【全部强制执行】
+
+            1.时间提取：仅提取正文描述的真实行为发生时间，（1）严格禁止：标题时间、书名号时间、公告落款时间、年报名称时间
+
+            （2）时间缺失处理：无明确时间的，TIME_ANCHOR 和 PERIOD_INFO 填"未知"，不创建TIME节点和OCCUR_AT关系
+
+            2. 实体完整性：必须补全原文中出现的所有公司、人物、监管机构，遗漏即失败
+
+            3. 事件原子级拆分：
+
+            （1）严格执行标题层级拆分：每个"(一)、(二)..."级别的小标题必须拆分为独立事件节点。
+
+            （2）禁止事件合并：不同小标题下的内容不得合并为同一事件。
+
+            （3）事件命名规范：事件标题直接采用小标题核心内容。
+
+            （4）保持事件颗粒度：每个事件节点只描述一个具体行为/事实.
+
+
+            【关系体系（必须全部使用以下标签）】
+
+            - PARTICIPATE_IN    → 公司参与或者实施行为 → EVENT
+
+            - PARTICIPATE_IN    → 人物参与或者实施行为 → EVENT
+
+            - 因果         → 因果：该事件引发另一事件 → EVENT
+
+            - 时序         → 时序：先发生 → 后发生
+
+            - 条件         → 条件：在前一事件成立的前提下 → 后一事件
+
+            - 反转         → 反转：打破预期、否定了前事件
+
+            - 任职         → 任职关系（人物 → 公司）
+
+            - 发生于      → 事件发生时间（EVENT → TIME，仅在有明确时间时使用）
+
+
+            【强制输出规则】
+
+            1. 只输出纯 JSONL，每行一个完整 JSON，禁止任何解释、markdown、```json、统计。
+
+            2. 所有节点在前，所有关系在后。
+
+            3. 节点顺序：COMPANY → PERSON → REGULATOR → EVENT → TIME（同类按原文首次出现顺序）
+
+            【节点模板（严格执行）】
+
+            {"type":"node","id":"c_随机9位","labels":["COMPANY"],"properties":{"COMPANY_NM":"完整公司名称"}}
+
+            {"type":"node","id":"p_随机9位","labels":["PERSON"],"properties":{"PERSON_NM":"姓名或某高管","POSITION":"具体职位","AFFILIATION":"所属完整公司名"}}
+
+            {"type":"node","id":"rg_随机9位","labels":["REGULATOR"],"properties":{"REGULATOR_NM":"完整的监管机构名称","ENTITY_ROLE":"监管方"}}
+
+            {"type":"node","id":"e_随机10位","labels":["EVENT"],"properties":{"title":"15字以内标题","text":"完整原文事件描述（基于原文，要详细）","event_category":"高价超募/抱团压价/信披违规/操纵市场/重大舆情","action_type":"具体违规行为","TIME_ANCHOR":"","PERIOD_INFO":"时间段或未知"}}
+
+            {"type":"node","id":"t_随机8位","labels":["TIME"],"properties":{"text":"原文时间表达","标准化时间":"YYYY-MM-DD","TIME_TYPE":"absolute"}}
+
+            【关系模板（必须支持以下全部标签）】
+
+            {"id":"r_随机10位","type":"relationship","label":"PARTICIPATE_IN","start":{"id":"对应公司节点id","labels":["COMPANY"]},"end":{"id":"对应事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"PARTICIPATE_IN","start":{"id":"对应人物节点id","labels":["PERSON"]},"end":"id":"对应事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"因果","start":{"id":"对应起始事件节点id","labels":["EVENT"]},"end":{"id":"对应目标事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"时序","start":{"id":"对应先发生事件节点id","labels":["EVENT"]},"end":{"id":"对应后发生事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"条件","start":{"id":"对应条件事件节点id","labels":["EVENT"]},"end":{"id":"对应结果事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"反转","start":{"id":"对应被反转事件节点id","labels":["EVENT"]},"end":{"id":"对应反转事件节点id","labels":["EVENT"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"任职","start":{"id":"对应人物节点id","labels":["PERSON"]},"end":{"id":"对应公司节点id","labels":["COMPANY"]}}
+
+            {"id":"r_随机10位","type":"relationship","label":"发生于","start":{"id":"对应事件节点id","labels":["EVENT"]},"end":{"id":"对应时间节点id","labels":["TIME"]}}
+
+
+            立即开始输出，从第一个 COMPANY 节点开始，禁止出现任何非 JSONL 内容。'
+        selected: false
+        title: 导出图谱数据为json数据
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1762157357813'
+      position:
+        x: 301.3350398342471
+        y: -242.6999202056164
+      positionAbsolute:
+        x: 301.3350398342471
+        y: -242.6999202056164
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\nimport random\nfrom typing import Dict, Any, List\n\n\
+          def main(raw_input: str) -> dict:\n    \"\"\"\n    【金融风险事理图谱终极融合生成器】ID生成器\n\
+          \    专为正确JSON格式设计的高效版本\n    \"\"\"\n    raw_text = raw_input.strip()\n \
+          \   if not raw_text:\n        return {\"result\": \"\"}\n\n    lines = [line.strip()\
+          \ for line in raw_text.split('\\n') if line.strip()]\n    if not lines:\n\
+          \        return {\"result\": \"\"}\n\n    # ID映射表\n    id_mapping: Dict[str,\
+          \ str] = {}\n    \n    def generate_random_id(prefix: str, length: int)\
+          \ -> str:\n        \"\"\"生成高质量随机ID\"\"\"\n        # 避免使用简单模式\n        avoid_patterns\
+          \ = {\n            '123', '321', '456', '654', '789', '987', '000', '111',\
+          \ '222', '333',\n            '444', '555', '666', '777', '888', '999', '1234',\
+          \ '4321', '5678', '8765'\n        }\n        \n        for _ in range(50):\
+          \  # 最多尝试50次\n            # 生成随机数\n            random_num = random.randint(10**(length-1),\
+          \ 10**length - 1)\n            num_str = str(random_num)\n            \n\
+          \            # 检查是否包含简单模式\n            contains_bad_pattern = any(pattern\
+          \ in num_str for pattern in avoid_patterns)\n            \n            #\
+          \ 检查数字多样性（至少4个不同数字）\n            digit_diversity = len(set(num_str))\n \
+          \           \n            if not contains_bad_pattern and digit_diversity\
+          \ >= 3:\n                new_id = f\"{prefix}_{num_str}\"\n            \
+          \    if new_id not in id_mapping.values():\n                    return new_id\n\
+          \        \n        # 如果尝试失败，使用安全的随机数\n        return f\"{prefix}_{random.randint(10**(length-1),\
+          \ 10**length - 1)}\"\n\n    # 第一遍：解析并生成新ID\n    objects = []\n    for line\
+          \ in lines:\n        try:\n            obj = json.loads(line)\n        \
+          \    objects.append(obj)\n        except json.JSONDecodeError:\n       \
+          \     # 跳过格式错误的行\n            continue\n\n    # 生成节点的新ID\n    for obj in\
+          \ objects:\n        old_id = obj.get(\"id\", \"\")\n        if not old_id:\n\
+          \            continue\n            \n        obj_type = obj.get(\"type\"\
+          , \"\")\n        \n        if obj_type == \"node\":\n            labels\
+          \ = obj.get(\"labels\", [])\n            if \"COMPANY\" in labels:\n   \
+          \             new_id = generate_random_id(\"c\", 9)\n            elif \"\
+          PERSON\" in labels:\n                new_id = generate_random_id(\"p\",\
+          \ 9)\n            elif \"REGULATOR\" in labels:\n                new_id\
+          \ = generate_random_id(\"rg\", 9)\n            elif \"EVENT\" in labels:\n\
+          \                new_id = generate_random_id(\"e\", 10)\n            elif\
+          \ \"TIME\" in labels:\n                new_id = generate_random_id(\"t\"\
+          , 8)\n            else:\n                continue\n                \n  \
+          \      elif obj_type == \"relationship\":\n            new_id = generate_random_id(\"\
+          r\", 10)\n        else:\n            continue\n            \n        id_mapping[old_id]\
+          \ = new_id\n        obj[\"id\"] = new_id\n\n    # 第二遍：更新关系中的ID引用\n    result_lines\
+          \ = []\n    for obj in objects:\n        # 处理关系中的引用\n        if obj.get(\"\
+          type\") == \"relationship\":\n            # 处理start\n            if isinstance(obj.get(\"\
+          start\"), dict):\n                start_id = obj[\"start\"].get(\"id\",\
+          \ \"\")\n                if start_id in id_mapping:\n                  \
+          \  obj[\"start\"][\"id\"] = id_mapping[start_id]\n            \n       \
+          \     # 处理end\n            if isinstance(obj.get(\"end\"), dict):\n    \
+          \            end_id = obj[\"end\"].get(\"id\", \"\")\n                if\
+          \ end_id in id_mapping:\n                    obj[\"end\"][\"id\"] = id_mapping[end_id]\n\
+          \        \n        # 序列化\n        result_lines.append(json.dumps(obj, ensure_ascii=False,\
+          \ separators=(',', ':')))\n\n    return {\"result\": \"\\n\".join(result_lines)}"
+        code_language: python3
+        outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 为节点和边生成唯一ID
+        type: code
+        variables:
+        - value_selector:
+          - '1762157357813'
+          - text
+          value_type: string
+          variable: raw_input
+      height: 51
+      id: '1765265461787'
+      position:
+        x: 595.0796510776345
+        y: -234.84512028216858
+      positionAbsolute:
+        x: 595.0796510776345
+        y: -234.84512028216858
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1765265461787'
+          - result
+          value_type: string
+          variable: result
+        selected: false
+        title: 结束
+        type: end
+      height: 88
+      id: '1765265735456'
+      position:
+        x: 902.1042794976963
+        y: -254.3729923171182
+      positionAbsolute:
+        x: 902.1042794976963
+        y: -254.3729923171182
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 223.40125032484116
+      y: 494.02724254000714
+      zoom: 0.757858283255199
+  rag_pipeline_variables: []

@@ -1,0 +1,822 @@
+﻿app:
+  description: 通用政策法规图谱构建工作流，面向资本市场监管规则、交易所自律规则、处罚处分规则等文本，抽取法规层、责任主体、行为、义务、限制、监管机构、法律依据及其关系，输出标准 JSONL 三元组。
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 政策法规图谱构建-完整
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/deepseek:0.0.11@35bcd3f233f99d07bdadef8b326945df3bda5e8f773330144bc90d84800336b9
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: document-extractor
+      id: 1758523492950-source-1758523992908-target
+      selected: false
+      source: '1758523492950'
+      sourceHandle: source
+      target: '1758523992908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: document-extractor
+        targetType: code
+      id: 1758523992908-source-17585314932320-target
+      selected: false
+      source: '1758523992908'
+      sourceHandle: source
+      target: '17585314932320'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: true
+        isInLoop: false
+        iteration_id: '1758540949631'
+        sourceType: iteration-start
+        targetType: llm
+      id: 1758540949631start-source-1758540967382-target
+      selected: false
+      source: 1758540949631start
+      sourceHandle: source
+      target: '1758540967382'
+      targetHandle: target
+      type: custom
+      zIndex: 1002
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: iteration
+      id: 17585314932320-source-1758540949631-target
+      selected: false
+      source: '17585314932320'
+      sourceHandle: source
+      target: '1758540949631'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: iteration
+        targetType: code
+      id: 1758540949631-source-1774416556620-target
+      selected: false
+      source: '1758540949631'
+      sourceHandle: source
+      target: '1774416556620'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: 1774416556620-source-1774419330416-target
+      selected: false
+      source: '1774416556620'
+      sourceHandle: source
+      target: '1774419330416'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: 1774419330416-source-1758524259290-target
+      selected: false
+      source: '1774419330416'
+      sourceHandle: source
+      target: '1758524259290'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - allowed_file_extensions: []
+          allowed_file_types:
+          - document
+          allowed_file_upload_methods:
+          - local_file
+          - remote_url
+          label: policy_file
+          max_length: 48
+          options: []
+          required: true
+          type: file
+          variable: policy_file
+      height: 108
+      id: '1758523492950'
+      position:
+        x: -155.30172019896014
+        y: 421.8241402274583
+      positionAbsolute:
+        x: -155.30172019896014
+        y: 421.8241402274583
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        is_array_file: false
+        selected: false
+        title: 文档提取器
+        type: document-extractor
+        variable_selector:
+        - '1758523492950'
+        - policy_file
+      height: 104
+      id: '1758523992908'
+      position:
+        x: 129.9473942071171
+        y: 442.8241402274583
+      positionAbsolute:
+        x: 129.9473942071171
+        y: 442.8241402274583
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - '1774419330416'
+          - final_triples
+          value_type: string
+          variable: output_triples
+        selected: true
+        title: 结束
+        type: end
+      height: 88
+      id: '1758524259290'
+      position:
+        x: 1717.006639762117
+        y: 442.8241402274583
+      positionAbsolute:
+        x: 1717.006639762117
+        y: 442.8241402274583
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(text: str) -> dict:\n    import re\n\n    # ✅ 修正后的文档标题提取\n\
+          \    title_match = re.search(r'^([^\\(（]+)', text)\n    doc_title = title_match.group(1).strip()\
+          \ if title_match else \"法规文件\"\n\n    # 初始化输出列表\n    text_blocks = []\n\n\
+          \    # 提取章节（修正后的正则表达式）\n    chapters = re.findall(\n        r\"(?:^|\\n)(第[一二三四五六七八九十百]+章.*?)(?=第[一二三四五六七八九十百]+章|\\\
+          Z)\",\n        text,\n        re.DOTALL | re.MULTILINE\n    )\n\n    if\
+          \ chapters:\n        for chap_idx, chap_content in enumerate(chapters, start=1):\n\
+          \            # 分离章节标题和内容\n            chap_title = re.search(r'^第[一二三四五六七八九十百]+章.*?(?=\\\
+          n|$)', chap_content).group(0).strip()\n            chap_body = re.sub(r'^'\
+          \ + re.escape(chap_title), '', chap_content, count=1).strip()\n\n      \
+          \      # 提取条款\n            articles = re.findall(\n                r\"(第[一二三四五六七八九十百]+条.*?)(?=第[一二三四五六七八九十百]+条|\\\
+          Z)\",\n                chap_body,\n                re.DOTALL\n         \
+          \   )\n\n            if articles:\n                for art_content in articles:\n\
+          \                    art_title = re.search(r'^第[一二三四五六七八九十百]+条.*?(?=\\n|$)',\
+          \ art_content).group(0).strip()\n                    art_body = re.sub(r'^'\
+          \ + re.escape(art_title), '', art_content, count=1).strip()\n          \
+          \          block = f\"文档：{doc_title}\\n章节：{chap_title}\\n条款：{art_title}\\\
+          n内容：{art_body[:1000]}\"\n                    text_blocks.append(block)\n\
+          \            else:\n                block = f\"文档：{doc_title}\\n章节：{chap_title}\\\
+          n内容：{chap_body[:1500]}\"\n                text_blocks.append(block)\n  \
+          \  else:\n        # 无章节结构时直接处理条款\n        articles = re.findall(\n     \
+          \       r\"(第[一二三四五六七八九十百]+条.*?)(?=第[一二三四五六七八九十百]+条|\\Z)\",\n          \
+          \  text,\n            re.DOTALL\n        )\n\n        if articles:\n   \
+          \         for art_content in articles:\n                art_title = re.search(r'^第[一二三四五六七八九十百]+条.*?(?=\\\
+          n|$)', art_content).group(0).strip()\n                art_body = re.sub(r'^'\
+          \ + re.escape(art_title), '', art_content, count=1).strip()\n          \
+          \      block = f\"文档：{doc_title}\\n条款：{art_title}\\n内容：{art_body[:1500]}\"\
+          \n                text_blocks.append(block)\n        else:\n           \
+          \ text_blocks.append(f\"文档：{doc_title}\\n内容：{text[:2000]}\")\n\n    # 限制输出数量\n\
+          \    text_blocks = text_blocks[:100] if len(text_blocks) > 100 else text_blocks\n\
+          \n    # 设置输出变量\n    block_count = len(text_blocks)\n    first_block = text_blocks[0]\
+          \ if text_blocks else \"\"\n\n    return {\n        \"text_blocks\": text_blocks,\n\
+          \        \"block_count\": block_count,\n        \"first_block\": first_block\n\
+          \    }"
+        code_language: python3
+        desc: ''
+        isInIteration: true
+        isInLoop: false
+        iteration_id: '1758530809383'
+        outputs:
+          block_count:
+            children: null
+            type: number
+          first_block:
+            children: null
+            type: string
+          text_blocks:
+            children: null
+            type: array[string]
+        selected: false
+        title: 文本分块
+        type: code
+        variables:
+        - value_selector:
+          - '1758523992908'
+          - text
+          value_type: string
+          variable: text
+      height: 51
+      id: '17585314932320'
+      position:
+        x: 400.40133435586824
+        y: 442.79698649935625
+      positionAbsolute:
+        x: 400.40133435586824
+        y: 442.79698649935625
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 1002
+    - data:
+        desc: ''
+        error_handle_mode: continue-on-error
+        height: 173
+        is_parallel: false
+        iterator_input_type: array[string]
+        iterator_selector:
+        - '17585314932320'
+        - text_blocks
+        output_selector:
+        - '1758540967382'
+        - text
+        output_type: array[string]
+        parallel_nums: 10
+        selected: false
+        start_node_id: 1758540949631start
+        title: 迭代
+        type: iteration
+        width: 387
+      height: 173
+      id: '1758540949631'
+      position:
+        x: 701.5276396830201
+        y: 442.8241402274583
+      positionAbsolute:
+        x: 701.5276396830201
+        y: 442.8241402274583
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 387
+      zIndex: 1
+    - data:
+        desc: ''
+        isInIteration: true
+        selected: false
+        title: ''
+        type: iteration-start
+      draggable: false
+      height: 48
+      id: 1758540949631start
+      parentId: '1758540949631'
+      position:
+        x: 24
+        y: 68
+      positionAbsolute:
+        x: 725.5276396830201
+        y: 510.8241402274583
+      selectable: false
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom-iteration-start
+      width: 44
+      zIndex: 1002
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        isInIteration: true
+        isInLoop: false
+        iteration_id: '1758540949631'
+        model:
+          completion_params: {}
+          mode: chat
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: cd09f6dc-1f47-403a-afc5-26473a279696
+          role: system
+          text: '你是一名专业的中国资本市场政策法规图谱构建专家，熟悉证券法、公司法、上市公司监管规则、信息披露规则、募集资金规则、交易所自律监管规则、行政处罚与纪律处分规则等制度性文件的结构与用语。你的任务是从政策法规、监管规则、处罚处分依据、交易所业务规则等文本中，精准识别责任主体、监管机构、法规层级、条款、行为、责任义务、禁止限制、法律依据及风险特征因子，并构建可导入 Neo4j 的标准三元组。
+
+
+            任务说明
+
+            从输入的法规文本块中，抽取并分类识别以下六类实体：
+
+            所有抽取结果必须为文本中原文出现的连续片段，不得进行任何概括、缩写或意译。
+
+
+
+            1.PartyWithResponsibility（责任主体）：
+
+            条文中承担义务、责任、监管对象身份、信息披露职责、合规管理职责、交易行为约束或法律后果的主体。
+
+            示例：上市公司、董事会、监事会、保荐机构、独立董事、商业银行、监管机构。
+
+            2.Action（行为）：
+
+            条文中涉及的具体操作或行为，包括资金管理、存储、使用、披露、投资、变更或发行股票等。
+
+            示例：信息披露、提交报告、公告、交易、减持、募集资金使用、资金占用、担保、内幕信息管理、履行承诺、接受监管、整改、处罚。
+
+            3.Responsibility（责任义务）：
+
+            条文中以“应当”“必须”“负责”“履行”“保证”“及时”“真实、准确、完整”“不得损害”等表述的义务、职责、合规要求或责任后果。
+
+            示例：应及时披露；应履行审议程序；应报交易所备案；应保证披露真实准确完整；应承担赔偿责任；应配合监管检查。
+
+            4.Restriction（禁止或限制）：
+
+            条文中以“不得”“禁止”“严禁”“不得变相”“不得规避”“不得损害”“不得误导”等形式出现的禁止性、限制性或风险约束。
+
+            示例：不得虚假记载；不得误导性陈述；不得重大遗漏；不得内幕交易；不得操纵市场；不得违规担保；不得资金占用；不得违规减持。
+
+            5.RegulatoryAuthority（监管机构）：
+
+            条文中出现的监管或执法机关。
+
+            示例：中国证监会、证券交易所、派出机构、证券业协会、上市公司监管部门、自律监管机构。
+
+            6.Law（法律或规章）：
+
+            条文中引用或依据的上位法、规范性文件。
+
+            示例：《公司法》《证券法》《上市公司证券发行管理办法》。
+
+
+            输出格式要求
+
+            请从每个法规文本块中，抽取并按以下格式输出结果，每个条款独立一行：
+
+
+            条款编号，
+
+            Title：文档标题
+
+            Chapter：章节标题
+
+            Section：条款标题
+
+            PartyWithResponsibility：主体1；主体2；…
+
+            Action：行为1；行为2；…
+
+            Responsibility：义务1；义务2；…
+
+            Restriction：限制1；限制2；…
+
+            RegulatoryAuthority：机构1；机构2；…
+
+            Law：法规名称1；法规名称2；…
+
+
+            格式细则
+
+            -若某类实体在条款中不存在，写“无”。
+
+            -每类实体下的关键词用中文顿号“；”分隔。
+
+            -抽取内容必须与条文原文一字不差。
+
+            -不得使用任何归纳、替换或简写。
+
+            -保持专业、准确。
+
+
+            关键词识别标准
+
+            1. PartyWithResponsibility
+
+            常见词汇：上市公司、控股股东、实际控制人、董事、监事、高级管理人员、证券公司、保荐机构、会计师事务所、律师事务所、投资者、监管部门、证监会、交易所。
+
+            注意：若条文中含“应当…的主体”，即为责任方。
+
+            2. Action
+
+            常见动词/短语：存放、使用、签订、披露、公告、报告、置换、投资、审议、备案、补充流动资金、归还贷款、变更、转让。
+
+            注意：区分“行为动作”与“义务要求”，若为具体执行动作则归入Action。
+
+            3. Responsibility
+
+            常见动词/短语：应当、必须、负责、履行、建立、保证、及时披露、真实准确完整、审议通过、出具报告、备案、公告、承担责任、赔偿损失。
+
+            表示主体“应履行的职责”或“应采取的措施”。
+
+            4. Restriction
+
+            常见动词/短语：不得、禁止、严禁、不得变相、不得规避、不得虚假记载、不得误导性陈述、不得重大遗漏、不得内幕交易、不得操纵市场、不得违规担保。
+
+            表示被明令禁止或限制的行为。
+
+            5. RegulatoryAuthority
+
+            常见词汇：中国证券监督管理委员会（中国证监会）、上海证券交易所、深圳证券交易所、北京证券交易所、派出机构、监管机构、本所、自律组织。
+
+            注意区分“监管方”与“被监管方”。
+
+            6. Law
+
+            常见表达：“根据……制定”“依照……”“参照……规定”“应符合……要求”。
+
+            抽取法规名称（一般含《》）。
+
+
+            示例
+
+
+            输入：
+
+            文档：上市公司信息披露管理办法
+
+            章节：第五章 监督管理和法律责任
+
+            条款：第四十条
+
+            内容：上市公司及其董事、监事、高级管理人员应当保证信息披露真实、准确、完整、及时、公平，不得有虚假记载、误导性陈述或者重大遗漏；违反规定的，中国证券监督管理委员会可以采取责令改正、监管谈话、出具警示函等监管措施。
+
+
+            输出：
+
+            第十六条，
+
+            Title：上市公司信息披露管理办法
+
+            Chapter：第五章 监督管理和法律责任
+
+            Section：第四十条
+
+            PartyWithResponsibility：上市公司
+
+            Action：信息披露；保证披露真实准确完整；违反规定
+
+            Responsibility：保证信息披露真实、准确、完整、及时、公平
+
+            Restriction：不得有虚假记载；不得有误导性陈述；不得有重大遗漏
+
+            RegulatoryAuthority：中国证券监督管理委员会
+
+            Law：无
+
+
+            执行指令：现在请对以下输入的政策法规文本块进行通用政策法规图谱构建实体抽取与关系抽取：{{#1758540949631.item#}}'
+        - id: f94aed57-ac05-4048-b4dc-dcc5eebd21d3
+          role: user
+          text: '{{#1758540949631.item#}}'
+        selected: false
+        title: LLM 3
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 87
+      id: '1758540967382'
+      parentId: '1758540949631'
+      position:
+        x: 92.8077507288856
+        y: 66
+      positionAbsolute:
+        x: 794.3353904119057
+        y: 508.8241402274583
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 1002
+    - data:
+        code: "def main(iteration_output: list, text_blocks: list) -> dict:\n    import\
+          \ json\n    import re\n    import time\n    \"\"\"\n    输入：\n    - iteration_output:\
+          \ LLM抽取的结构化实体数组\n    - text_blocks: 原始分块文本数组（包含完整条款内容）\n    \n    两个数组索引一一对应\n\
+          \    \"\"\"\n    nodes = []\n    edges = []\n    node_map = {}      # 节点去重：key=\"\
+          label:name\"\n    edge_set = set()   # 关系去重：key=\"start_id|end_id|label\"\
+          \n    \n    # 预定义关系抽取规则\n    relation_rules = {\n        (\"Title\", \"\
+          Chapter\"): \"包含\",\n        (\"Chapter\", \"Section\"): \"包含\",\n     \
+          \   (\"Section\", \"PartyWithResponsibility\"): \"包含责任方\",\n        (\"\
+          Section\", \"RegulatoryAuthority\"): \"包含监管机构\",\n        (\"Section\",\
+          \ \"Law\"): \"依据\",\n        (\"PartyWithResponsibility\", \"Responsibility\"\
+          ): \"履行\",\n        (\"PartyWithResponsibility\", \"Action\"): \"执行\",\n\
+          \        (\"Action\", \"Restriction\"): \"受限于\",\n        (\"RegulatoryAuthority\"\
+          , \"PartyWithResponsibility\"): \"监管\",\n        (\"RegulatoryAuthority\"\
+          , \"Law\"): \"依照\"\n    }\n    \n    def get_timestamp_id(prefix):\n   \
+          \     return f\"{prefix}{int(time.time() * 1000000)}\"\n    \n    def get_or_create_node(label,\
+          \ name, content=None):\n        \"\"\"获取或创建节点，保证同一name+label只创建一次\"\"\"\n\
+          \        key = f\"{label}:{name}\"\n        if key in node_map:\n      \
+          \      return node_map[key]\n        \n        node_id = get_timestamp_id(\"\
+          E\")\n        node = {\n            \"type\": \"node\",\n            \"\
+          id\": node_id,\n            \"labels\": [label],\n            \"properties\"\
+          : {\"name\": name}\n        }\n        if content and label == \"Section\"\
+          :\n            node[\"properties\"][\"content\"] = content\n           \
+          \ \n        nodes.append(node)\n        node_map[key] = node_id\n      \
+          \  return node_id\n    \n    def create_edge(start_id, start_label, end_id,\
+          \ end_label, relation):\n        \"\"\"创建关系边，自动去重\"\"\"\n        # 验证关系是否在预定义规则中\n\
+          \        expected_relation = relation_rules.get((start_label, end_label))\n\
+          \        if expected_relation and expected_relation != relation:\n     \
+          \       # 如果提供了关系但与规则不符，使用规则定义的关系\n            relation = expected_relation\n\
+          \        \n        edge_key = f\"{start_id}|{end_id}|{relation}\"\n    \
+          \    if edge_key in edge_set:\n            return  # 已存在，跳过\n        \n\
+          \        edge_set.add(edge_key)\n        edge_id = get_timestamp_id(\"R\"\
+          )\n        edge = {\n            \"id\": edge_id,\n            \"type\"\
+          : \"relationship\",\n            \"label\": relation,\n            \"start\"\
+          : {\"id\": start_id, \"labels\": [start_label]},\n            \"end\": {\"\
+          id\": end_id, \"labels\": [end_label]}\n        }\n        edges.append(edge)\n\
+          \    \n    # 确保两个数组长度一致\n    if len(iteration_output) != len(text_blocks):\n\
+          \        # 如果不一致，以较短的为准，并记录警告\n        min_len = min(len(iteration_output),\
+          \ len(text_blocks))\n        iteration_output = iteration_output[:min_len]\n\
+          \        text_blocks = text_blocks[:min_len]\n    \n    # 遍历处理每一对数据\n  \
+          \  for i in range(len(iteration_output)):\n        llm_output = iteration_output[i]\
+          \  # LLM抽取结果\n        original_block = text_blocks[i]   # 原始分块（含完整内容）\n\
+          \        \n        # ========== 从原始block中提取完整内容和文档结构 ==========\n      \
+          \  \n        # 提取文档标题\n        doc_match = re.search(r'文档：([^\\n]+)', original_block)\n\
+          \        doc_title = doc_match.group(1).strip() if doc_match else \"\"\n\
+          \        \n        # 提取章节标题\n        chap_match = re.search(r'章节：([^\\n]+)',\
+          \ original_block)\n        chap_title = chap_match.group(1).strip() if chap_match\
+          \ else \"\"\n        \n        # 提取条款标题（\"条款：第一条 xxx\"）\n        section_match\
+          \ = re.search(r'条款：([^\\n]+)', original_block)\n        section_full = section_match.group(1).strip()\
+          \ if section_match else \"\"\n        \n        # 提取条款名称（如\"第一条\"）\n   \
+          \     section_name_match = re.search(r'(第[一二三四五六七八九十百]+条)', section_full)\n\
+          \        section_name = section_name_match.group(1) if section_name_match\
+          \ else section_full[:10]\n        \n        # ========== 关键：提取完整条款内容（包含标题后的所有正文）==========\n\
+          \        # 从\"条款：\"行提取完整内容，或从\"内容：\"字段提取\n        content = \"\"\n     \
+          \   \n        # 尝试从\"内容：\"字段提取（如果有）\n        content_match = re.search(r'内容[：:]\\\
+          s*(.*?)(?=\\Z)', original_block, re.DOTALL)\n        if content_match:\n\
+          \            content = content_match.group(1).strip()\n        \n      \
+          \  # 如果内容为空，从条款行提取（去掉\"第一条 \"前缀）\n        if not content and section_full:\n\
+          \            # 去掉条款编号部分，保留正文\n            content = re.sub(r'^第[一二三四五六七八九十百]+条\\\
+          s*', '', section_full).strip()\n        \n        # 如果还是空，使用section_full作为fallback\n\
+          \        if not content:\n            content = section_full\n        \n\
+          \        # ========== 从LLM输出解析结构化实体 ==========\n        \n        data =\
+          \ {\n            'Title': '', 'Chapter': '', 'Section': '',\n          \
+          \  'PartyWithResponsibility': '', 'Action': '',\n            'Restriction':\
+          \ '', 'RegulatoryAuthority': '',\n            'Law': '', 'Responsibility':\
+          \ ''\n        }\n        \n        # 解析LLM输出的每一行\n        for line in llm_output.split('\\\
+          n'):\n            if '：' in line:\n                parts = line.split('：',\
+          \ 1)\n                key = parts[0].strip()\n                value = parts[1].strip()\
+          \ if len(parts) > 1 else \"\"\n                \n                # 映射字段名（兼容旧字段名PunishmentMeasure）\n\
+          \                if key == '条款编号' or key == 'Section':\n               \
+          \     data['Section'] = value\n                elif key == 'PunishmentMeasure':\n\
+          \                    # 将旧的PunishmentMeasure映射到Restriction\n            \
+          \        data['Restriction'] = value\n                elif key in data:\n\
+          \                    data[key] = value\n        \n        # 使用原始文档信息覆盖LLM输出（更可靠）\n\
+          \        if doc_title:\n            data['Title'] = doc_title\n        if\
+          \ chap_title:\n            data['Chapter'] = chap_title\n        if section_name:\n\
+          \            data['Section'] = section_name\n        \n        # ==========\
+          \ 创建层级节点 ==========\n        \n        title_id = chapter_id = section_id\
+          \ = None\n        \n        # Title节点\n        if data['Title'] and data['Title']\
+          \ != '无':\n            title_id = get_or_create_node(\"Title\", data['Title'])\n\
+          \        \n        # Chapter节点\n        if data['Chapter'] and data['Chapter']\
+          \ != '无':\n            chapter_id = get_or_create_node(\"Chapter\", data['Chapter'])\n\
+          \            if title_id:\n                # 使用规则定义的关系\n               \
+          \ relation = relation_rules.get((\"Title\", \"Chapter\"), \"包含\")\n    \
+          \            create_edge(title_id, \"Title\", chapter_id, \"Chapter\", relation)\n\
+          \        \n        # Section节点 - 使用完整原文作为content\n        if data['Section']\
+          \ and data['Section'] != '无':\n            section_id = get_or_create_node(\"\
+          Section\", data['Section'], content)\n            if chapter_id:\n     \
+          \           relation = relation_rules.get((\"Chapter\", \"Section\"), \"\
+          包含\")\n                create_edge(chapter_id, \"Chapter\", section_id,\
+          \ \"Section\", relation)\n            elif title_id:\n                relation\
+          \ = relation_rules.get((\"Title\", \"Section\"), \"包含\")\n             \
+          \   create_edge(title_id, \"Title\", section_id, \"Section\", relation)\n\
+          \        \n        # ========== 创建实体节点及关系 ==========\n        \n       \
+          \ # PartyWithResponsibility\n        parties = [p.strip() for p in data['PartyWithResponsibility'].split('；')\
+          \ \n                   if p.strip() and p != '无']\n        party_ids = []\n\
+          \        for party in parties:\n            pid = get_or_create_node(\"\
+          PartyWithResponsibility\", party)\n            party_ids.append(pid)\n \
+          \           if section_id:\n                relation = relation_rules.get((\"\
+          Section\", \"PartyWithResponsibility\"), \"包含责任方\")\n                create_edge(section_id,\
+          \ \"Section\", pid, \"PartyWithResponsibility\", relation)\n        \n \
+          \       # RegulatoryAuthority\n        regulators = [r.strip() for r in\
+          \ data['RegulatoryAuthority'].split('；') \n                      if r.strip()\
+          \ and r != '无']\n        regulator_ids = []\n        for reg in regulators:\n\
+          \            rid = get_or_create_node(\"RegulatoryAuthority\", reg)\n  \
+          \          regulator_ids.append(rid)\n            if section_id:\n     \
+          \           relation = relation_rules.get((\"Section\", \"RegulatoryAuthority\"\
+          ), \"包含监管机构\")\n                create_edge(section_id, \"Section\", rid,\
+          \ \"RegulatoryAuthority\", relation)\n        \n        # Law\n        laws\
+          \ = [l.strip() for l in data['Law'].split('；') if l.strip() and l != '无']\n\
+          \        law_ids = []\n        for law in laws:\n            lid = get_or_create_node(\"\
+          Law\", law)\n            law_ids.append(lid)\n            if section_id:\n\
+          \                relation = relation_rules.get((\"Section\", \"Law\"), \"\
+          依据\")\n                create_edge(section_id, \"Section\", lid, \"Law\"\
+          , relation)\n        \n        # Action\n        actions = [a.strip() for\
+          \ a in data['Action'].split('；') if a.strip() and a != '无']\n        action_ids\
+          \ = []\n        for action in actions:\n            aid = get_or_create_node(\"\
+          Action\", action)\n            action_ids.append(aid)\n            for pid\
+          \ in party_ids:\n                # 更新：PartyWithResponsibility -> Action\
+          \ 的关系为 \"执行\"\n                relation = relation_rules.get((\"PartyWithResponsibility\"\
+          , \"Action\"), \"执行\")\n                create_edge(pid, \"PartyWithResponsibility\"\
+          , aid, \"Action\", relation)\n        \n        # Restriction（替换原来的PunishmentMeasure）\n\
+          \        restrictions = [r.strip() for r in data['Restriction'].split('；')\
+          \ \n                       if r.strip() and r != '无']\n        for rest\
+          \ in restrictions:\n            rid = get_or_create_node(\"Restriction\"\
+          , rest)\n            for aid in action_ids:\n                # 更新：Action\
+          \ -> Restriction 的关系为 \"受限于\"\n                relation = relation_rules.get((\"\
+          Action\", \"Restriction\"), \"受限于\")\n                create_edge(aid, \"\
+          Action\", rid, \"Restriction\", relation)\n        \n        # Responsibility\n\
+          \        responsibilities = [r.strip() for r in data['Responsibility'].split('；')\
+          \ \n                            if r.strip() and r != '无']\n        for\
+          \ resp in responsibilities:\n            rid = get_or_create_node(\"Responsibility\"\
+          , resp)\n            for pid in party_ids:\n                relation = relation_rules.get((\"\
+          PartyWithResponsibility\", \"Responsibility\"), \"履行\")\n              \
+          \  create_edge(pid, \"PartyWithResponsibility\", rid, \"Responsibility\"\
+          , relation)\n        \n        # RegulatoryAuthority 监管 PartyWithResponsibility\n\
+          \        for rid in regulator_ids:\n            for pid in party_ids:\n\
+          \                relation = relation_rules.get((\"RegulatoryAuthority\"\
+          , \"PartyWithResponsibility\"), \"监管\")\n                create_edge(rid,\
+          \ \"RegulatoryAuthority\", pid, \"PartyWithResponsibility\", relation)\n\
+          \        \n        # RegulatoryAuthority 依照 Law\n        for rid in regulator_ids:\n\
+          \            for lid in law_ids:\n                relation = relation_rules.get((\"\
+          RegulatoryAuthority\", \"Law\"), \"依照\")\n                create_edge(rid,\
+          \ \"RegulatoryAuthority\", lid, \"Law\", relation)\n    \n    # 生成输出\n \
+          \   all_triples = nodes + edges\n    jsonl_lines = [json.dumps(t, ensure_ascii=False)\
+          \ for t in all_triples]\n    \n    # 生成预览（前3条节点和前3条关系）\n    preview_nodes\
+          \ = [l for l in jsonl_lines if '\"type\": \"node\"' in l][:2]\n    preview_edges\
+          \ = [l for l in jsonl_lines if '\"type\": \"relationship\"' in l][:2]\n\
+          \    preview_str = \"\\n\".join(preview_nodes + preview_edges)\n    \n \
+          \   return {\n        \"triples_jsonl\": \"\\n\".join(jsonl_lines),\n  \
+          \      \"node_count\": len(nodes),\n        \"edge_count\": len(edges),\n\
+          \        \"preview\": preview_str,\n        \"stats\": f\"处理了{len(iteration_output)}个条款，生成{len(nodes)}个节点，{len(edges)}条关系（已去重）\"\
+          \n    }"
+        code_language: python3
+        outputs:
+          edge_count:
+            children: null
+            type: number
+          node_count:
+            children: null
+            type: number
+          preview:
+            children: null
+            type: string
+          stats:
+            children: null
+            type: string
+          triples_jsonl:
+            children: null
+            type: string
+        selected: false
+        title: 三元组构建
+        type: code
+        variables:
+        - value_selector:
+          - '1758540949631'
+          - output
+          value_type: array[string]
+          variable: iteration_output
+        - value_selector:
+          - '17585314932320'
+          - text_blocks
+          value_type: array[string]
+          variable: text_blocks
+      height: 51
+      id: '1774416556620'
+      position:
+        x: 1124.6071083989857
+        y: 442.8241402274583
+      positionAbsolute:
+        x: 1124.6071083989857
+        y: 442.8241402274583
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(triples_jsonl: str) -> dict:\n    import json\n    lines =\
+          \ triples_jsonl.strip().split('\\n')\n    \n    # 分离节点和关系\n    nodes = {}\n\
+          \    edges = []\n    \n    for line in lines:\n        if not line.strip():\n\
+          \            continue\n        try:\n            obj = json.loads(line)\n\
+          \            if obj.get('type') == 'node':\n                # 用 label:name\
+          \ 作为唯一键\n                key = f\"{obj['labels'][0]}:{obj['properties']['name']}\"\
+          \n                if key not in nodes:\n                    nodes[key] =\
+          \ obj\n                else:\n                    # 如果已存在，保留有content的（Section节点）\n\
+          \                    existing = nodes[key]\n                    if 'content'\
+          \ in obj.get('properties', {}) and 'content' not in existing.get('properties',\
+          \ {}):\n                        nodes[key] = obj\n            else:\n  \
+          \              edges.append(obj)\n        except:\n            continue\n\
+          \    \n    # 重新分配ID并建立映射\n    id_mapping = {}\n    final_nodes = []\n  \
+          \  for key, node in nodes.items():\n        old_id = node['id']\n      \
+          \  # 保留原ID或生成新ID\n        id_mapping[old_id] = old_id\n        final_nodes.append(node)\n\
+          \    \n    # 更新关系中的ID引用\n    final_edges = []\n    for edge in edges:\n\
+          \        start_id = edge['start']['id']\n        end_id = edge['end']['id']\n\
+          \        # 确保引用的节点存在\n        if start_id in id_mapping and end_id in id_mapping:\n\
+          \            final_edges.append(edge)\n    \n    # 输出\n    all_items = final_nodes\
+          \ + final_edges\n    output = \"\\n\".join([json.dumps(x, ensure_ascii=False)\
+          \ for x in all_items])\n    \n    return {\n        \"final_triples\": output,\n\
+          \        \"stats_triples\": f\"节点: {len(final_nodes)}, 关系: {len(final_edges)}\"\
+          \n    }"
+        code_language: python3
+        outputs:
+          final_triples:
+            children: null
+            type: string
+          stats_triples:
+            children: null
+            type: string
+        selected: false
+        title: 实体去重合并
+        type: code
+        variables:
+        - value_selector:
+          - '1774416556620'
+          - triples_jsonl
+          value_type: string
+          variable: triples_jsonl
+      height: 51
+      id: '1774419330416'
+      position:
+        x: 1430.1026625409584
+        y: 442.8241402274583
+      positionAbsolute:
+        x: 1430.1026625409584
+        y: 442.8241402274583
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -939.2073004857389
+      y: -228.65559035142644
+      zoom: 1.0155225125042753
+  rag_pipeline_variables: []
+
+

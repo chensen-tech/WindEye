@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E3A5F"/>
+    </linearGradient>
+    <linearGradient id="iris" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#2855D1"/>
+      <stop offset="100%" stop-color="#1E3A5F"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFC101"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="92" fill="url(#bg)"/>
+
+  <!-- Outer ring (wind/radar) -->
+  <circle cx="100" cy="100" r="72" fill="none" stroke="url(#ring)" stroke-width="3" opacity="0.6"/>
+  <circle cx="100" cy="100" r="52" fill="none" stroke="url(#ring)" stroke-width="1.5" opacity="0.35"/>
+  <circle cx="100" cy="100" r="32" fill="none" stroke="url(#ring)" stroke-width="1" opacity="0.2"/>
+
+  <!-- Crosshair lines -->
+  <line x1="28" y1="100" x2="172" y2="100" stroke="url(#ring)" stroke-width="0.8" opacity="0.25"/>
+  <line x1="100" y1="28" x2="100" y2="172" stroke="url(#ring)" stroke-width="0.8" opacity="0.25"/>
+
+  <!-- Eye shape (outer) -->
+  <ellipse cx="100" cy="100" rx="38" ry="48" fill="none" stroke="#38BDF8" stroke-width="3.5"/>
+  <ellipse cx="100" cy="100" rx="38" ry="48" fill="#0F172A" opacity="0.6"/>
+
+  <!-- Eye shape (inner highlight) -->
+  <ellipse cx="100" cy="98" rx="28" ry="36" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Iris/pupil -->
+  <circle cx="100" cy="98" r="16" fill="url(#iris)"/>
+  <circle cx="100" cy="98" r="8" fill="#0F172A"/>
+  <circle cx="103" cy="92" r="4" fill="#ffffff" opacity="0.7"/>
+
+  <!-- Wind swirl lines (left side) -->
+  <path d="M42 78 Q60 70 68 78 Q78 88 58 95" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M38 112 Q55 105 62 112 Q72 120 54 128" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Wind swirl lines (right side) -->
+  <path d="M158 78 Q140 70 132 78 Q122 88 142 95" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M162 112 Q145 105 138 112 Q128 120 146 128" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Top wind arc -->
+  <path d="M82 38 Q100 28 118 38" fill="none" stroke="#FFC101" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M88 44 Q100 34 112 44" fill="none" stroke="#FFC101" stroke-width="1.5" stroke-linecap="round" opacity="0.3"/>
+
+  <!-- Bottom wind arc -->
+  <path d="M78 162 Q100 172 122 162" fill="none" stroke="#FFC101" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M84 156 Q100 166 116 156" fill="none" stroke="#FFC101" stroke-width="1.5" stroke-linecap="round" opacity="0.3"/>
+
+  <!-- Small accent dots -->
+  <circle cx="100" cy="64" r="2.5" fill="#38BDF8" opacity="0.8"/>
+  <circle cx="100" cy="136" r="2.5" fill="#38BDF8" opacity="0.8"/>
+  <circle cx="64" cy="100" r="2.5" fill="#38BDF8" opacity="0.8"/>
+  <circle cx="136" cy="100" r="2.5" fill="#38BDF8" opacity="0.8"/>
+</svg>

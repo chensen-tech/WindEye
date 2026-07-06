@@ -1,0 +1,90 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# virtual environment
+venv/
+env/
+.venv/
+.env
+backend/.env
+
+# IDE
+.idea/
+.vscode/
+.history/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# dependencies
+**/node_modules
+
+# production build
+**/dist/
+/build
+*.tsbuildinfo
+
+# umi
+.umi
+.umi-production
+.umi-test
+
+# misc
+npm-debug.log*
+yarn-error.log
+yarn.lock
+*bak
+*.log
+
+# test coverage
+/coverage
+
+# screenshot
+screenshot
+.firebase
+
+# data collection outputs (large files)
+**/data/
+backend/output/
+backend/scratch_*.py
+backend/query_*.py
+docs/generated/
+docs/media/
+*.pdf
+*.docx
+*.xlsx
+*.crdownload
+*.tmp
+
+# env config (keep sample only)
+!backend/config/
+!docs/
+!.github/
+
+# Claude / agent files (local only)
+.claude/
+.agents/
+.learnings/
+MEMORY.md
+
+# package manager cache
+.pnpm-store/
+frontend/.npm-cache/
+
+# local run artifacts
+frontend_run/
+backend/kg_outputs/

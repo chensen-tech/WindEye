@@ -1,0 +1,886 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 风险特征图谱构建0702
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/deepseek:0.0.17@f7a5c1d222d17ee419b17a80d6e4923838fe93788dc724a3af73fbc6990b3a32
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: code
+      id: 1779942325650-source-1779951872942-target
+      selected: false
+      source: '1779942325650'
+      sourceHandle: source
+      target: '1779951872942'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1779952651609-source-1779952232024-target
+      selected: false
+      source: '1779952651609'
+      sourceHandle: source
+      target: '1779952232024'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: knowledge-retrieval
+      id: 1779951872942-source-1779952651609-target
+      selected: false
+      source: '1779951872942'
+      sourceHandle: source
+      target: '1779952651609'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1779955831060-source-1779955846306-target
+      selected: false
+      source: '1779955831060'
+      sourceHandle: source
+      target: '1779955846306'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1779952232024-source-1780456337836-target
+      selected: false
+      source: '1779952232024'
+      sourceHandle: source
+      target: '1780456337836'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1779955846306-source-1780456928886-target
+      selected: false
+      source: '1779955846306'
+      sourceHandle: source
+      target: '1780456928886'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1780456928886-source-1779955962471-target
+      selected: false
+      source: '1780456928886'
+      sourceHandle: source
+      target: '1779955962471'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: 1780456337836-source-1782969435248-target
+      selected: false
+      source: '1780456337836'
+      sourceHandle: source
+      target: '1782969435248'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: knowledge-retrieval
+      id: 1782969435248-true-1779955831060-target
+      selected: false
+      source: '1782969435248'
+      sourceHandle: 'true'
+      target: '1779955831060'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1782969435248-false-1782969642264-target
+      source: '1782969435248'
+      sourceHandle: 'false'
+      target: '1782969642264'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1779955962471-source-1779952810338-target
+      source: '1779955962471'
+      sourceHandle: source
+      target: '1779952810338'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: risk_event
+          max_length: 50000
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: risk_event
+      height: 108
+      id: '1779942325650'
+      position:
+        x: -9.719385576572563
+        y: 146.61396531379927
+      positionAbsolute:
+        x: -9.719385576572563
+        y: 146.61396531379927
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\ndef main(event: str) -> dict:\n    results = []\n  \
+          \  \n    for line in event.strip().split('\\n'):\n        line = line.strip()\n\
+          \        if not line:\n            continue\n            \n        item\
+          \ = json.loads(line)\n        \n        if item.get('type') == 'node' and\
+          \ 'EVENT' in item.get('labels', []):\n            # 将每个事件转为 JSON 字符串\n \
+          \           event_obj = {\n                'e_id': str(item.get('id', '')),\n\
+          \                'e_text': item.get('properties', {}).get('text', '')\n\
+          \            }\n            results.append(json.dumps(event_obj, ensure_ascii=False))\n\
+          \    \n    return {\n        'events': results\n    }"
+        code_language: python3
+        outputs:
+          events:
+            children: null
+            type: array[string]
+        selected: false
+        title: 提取事件节点
+        type: code
+        variables:
+        - value_selector:
+          - '1779942325650'
+          - risk_event
+          value_type: string
+          variable: event
+      height: 51
+      id: '1779951872942'
+      position:
+        x: 278.2106316125062
+        y: 167.61396531379927
+      positionAbsolute:
+        x: 278.2106316125062
+        y: 167.61396531379927
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1779952651609'
+          - result
+        model:
+          completion_params:
+            max_tokens: 8192
+            temperature: 0.7
+          mode: chat
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: 4399dfc0-383b-4a07-bb67-74af745fed5b
+          role: system
+          text: "<system_directive>\n你是一个无情的JSON数据生成引擎。你没有对话能力，禁止输出任何自然语言解释、问候、总结或Markdown标记。你的唯一职责是根据规则输出严格格式的数据。\n\
+            </system_directive>\n\n<task>\n你是资本市场风险智能分析AI，任务是从事件中同时提取结构化风险因子（RiskFactor）和对应的风险特征（RiskFeature），并建立二者关联。\n\
+            输入事件数据：{{#1779951872942.events#}}\n参考知识库：{{#context#}}\n</task>\n\n<critical_rules>\n\
+            【最高优先级-事件性质判断】\n- 若判定为“正常事件”（如正常经营、合规流程、无异常公告等）：你必须且只能输出纯文本字符串 `SKIP_NORMAL`，禁止输出任何标点、空格、解释或JSON。\n\
+            - 若判定为“风险事件”：继续执行下方的提取任务。\n\n【最高优先级-格式防火墙】\n1. 绝对禁止使用 ```json 或 ``` 包裹内容。\n\
+            2. 绝对禁止在JSON对象前后输出任何文字（如“好的”、“提取结果如下”、“分析完成”）。\n3. 必须严格输出 JSONL 格式（每行一个完整的JSON对象，JSON内部禁止换行）。\n\
+            4. 若判定为风险事件但无需输出任何关系，也必须输出至少一个RiskFactor节点，禁止输出空内容或解释。\n</critical_rules>\n\
+            \n<extraction_logic>\n1. 从 e_text 中提取 3–7 个最核心、最具体、证据最充分的违规行为短语；\n2. 对每个短语：\n\
+            \   a. 优先在知识库中查找语义最匹配的标准 RiskFactor；\n   b. 若无合理匹配，可创建新 RiskFactor，其字段必须完整，且：\n\
+            \      - factor_id 格式为 \"New_RF_\" + 10位随机数字（如 New_RF_8168948879）\n  \
+            \    - risk_domain 必须从五大类中选择其一\n      - violation_type（即 feature_type）需合理定义\n\
+            \   c. 为每个 RiskFactor 生成对应的 RiskFeature 节点：\n      - 若 RiskFactor 来自知识库，则\
+            \ RiskFeature.id = \"RFT_\" + factor_id 后缀，其余字段复制；\n      - 若 RiskFactor\
+            \ 为新建，则 RiskFeature.id = \"New_RFT_\" + 10位随机数字，并基于其 violation_type 构建\
+            \ properties；若该 feature_type 已存在于知识库中，应复用已有特征元数据。\n3. 所有内容必须基于原文或高度概括，不得臆测。\n\
+            </extraction_logic>\n\n<output_schema>\n✅ 第一类：RiskFactor 节点\n{\"type\"\
+            : \"node\", \"id\": \"factor_id\", \"labels\": [\"RiskFactor\"], \"properties\"\
+            : {\"factor_nm\": \"...\", \"risk_domain\": \"...\", \"violation_type\"\
+            : \"...\", \"definition\": \"...\", \"keywords\": [...], \"compliance_tag\"\
+            : \"...\"}}\n\n✅ 第二类：RiskFeature 节点（每个唯一 feature_type 仅输出一次）\n{\"type\"\
+            : \"node\", \"id\": \"RFT_xxx 或 New_RFT_xxx\", \"labels\": [\"RiskFeature\"\
+            ], \"properties\": {\"feature_type\": \"...\", \"risk_domain\": \"...\"\
+            , \"keywords\": [...], \"compliance_tag\": \"...\"}}\n\n✅ 第三类：“触发”关系（RiskFactor\
+            \ → Event）\n{\"id\": \"10位随机纯数字\", \"type\": \"relationship\", \"label\"\
+            : \"触发\", \"properties\": {\"e_id\": \"输入的事件ID\", \"e_text\": \"≤50字复述\"\
+            , \"rf_id\": \"factor_id\", \"factor_nm\": \"...\"}, \"start\": {\"id\"\
+            : \"factor_id\", \"labels\": [\"RiskFactor\"]}, \"end\": {\"id\": \"e_id\"\
+            , \"labels\": [\"Event\"]}}\n\n✅ 第四类：“构成”关系（RiskFactor → RiskFeature）\n\
+            {\"id\": \"{rf_id}_{rft_id}\", \"type\": \"relationship\", \"label\":\
+            \ \"构成\", \"properties\": {\"e_id\": \"...\", \"e_text\": \"≤50字\", \"\
+            rf_id\": \"factor_id\", \"factor_nm\": \"...\", \"rft_id\": \"RiskFeature.id\"\
+            , \"feature_type\": \"...\"}, \"start\": {\"id\": \"factor_id\", \"labels\"\
+            : [\"RiskFactor\"]}, \"end\": {\"id\": \"RiskFeature.id\", \"labels\"\
+            : [\"RiskFeature\"]}}\n</output_schema>\n\n<rules>\n- “构成”关系ID必须严格使用 \"\
+            {rf_id}_{rft_id}\" 格式拼接，禁止随机数。\n- e_text 在所有 relationship.properties 中必须\
+            \ ≤50 字。\n- 不得输出任何额外字段、注释、说明或格式符号。\n</rules>\n\n现在开始处理：\n{{#1779951872942.events#}}"
+        selected: false
+        title: 特征因子提取
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1779952232024'
+      position:
+        x: 909.0780036537556
+        y: 167.61396531379927
+      positionAbsolute:
+        x: 909.0780036537556
+        y: 167.61396531379927
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        dataset_ids:
+        - B7A6iSfTgfZaEET6ag+gz0vGPk4lLbEgB8VTgAbiah80OJA2xgVZtJudEikjfxyr
+        multiple_retrieval_config:
+          reranking_enable: false
+          reranking_mode: reranking_model
+          top_k: 4
+        query_attachment_selector: []
+        query_variable_selector:
+        - '1779942325650'
+        - risk_event
+        retrieval_mode: multiple
+        selected: false
+        title: 风险特征因子库
+        type: knowledge-retrieval
+      height: 89
+      id: '1779952651609'
+      position:
+        x: 591.0560564876378
+        y: 167.61396531379927
+      positionAbsolute:
+        x: 591.0560564876378
+        y: 167.61396531379927
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1780456337836'
+          - corrected_text
+          value_type: string
+          variable: text
+        - value_selector:
+          - '1780456928886'
+          - corrected_text
+          value_type: string
+          variable: text_1
+        - value_selector:
+          - '1779955962471'
+          - text
+          value_type: string
+          variable: text_2
+        selected: false
+        title: 映射输出
+        type: end
+      height: 140
+      id: '1779952810338'
+      position:
+        x: 1223.8694699006064
+        y: 429.8934236578299
+      positionAbsolute:
+        x: 1223.8694699006064
+        y: 429.8934236578299
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        dataset_ids:
+        - 2NIt+RFHNtnx623bEJqso5cfXIW6TecF2BfVD3DXlnQ2X5YQFsRJQZ3R/C8/fTT6
+        multiple_retrieval_config:
+          reranking_enable: false
+          reranking_mode: reranking_model
+          top_k: 4
+        query_attachment_selector: []
+        query_variable_selector:
+        - '1779952232024'
+        - text
+        retrieval_mode: multiple
+        selected: false
+        title: 法律法规知识库
+        type: knowledge-retrieval
+      height: 89
+      id: '1779955831060'
+      position:
+        x: -3.656519310530939
+        y: 429.8934236578299
+      positionAbsolute:
+        x: -3.656519310530939
+        y: 429.8934236578299
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1779955831060'
+          - result
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: 26371e8c-0927-4a66-be17-0c0ffc88cd2c
+          role: system
+          text: '<system_directive>
+
+            你是一个无情的JSON数据生成引擎。禁止输出任何自然语言解释、问候、总结或Markdown标记。
+
+            </system_directive>
+
+
+            <task>
+
+            你是资本市场法规匹配专家，任务是将已识别的风险因子与政策法规知识库中的条文进行精准语义对齐。
+
+            输入RiskFactor数据：{{#1780456337836.corrected_text#}}
+
+            输入法规知识库：{{#context#}}
+
+            </task>
+
+
+            <critical_rules>
+
+            【最高优先级-匹配结果处理】
+
+            - 若存在匹配：严格按下方格式输出 JSONL。
+
+            - 若没有任何匹配：你必须且只能输出纯文本字符串 `SKIP_NO_MATCH`，禁止输出“未找到”、“无匹配”等任何解释性文字。
+
+
+            【最高优先级-格式防火墙】
+
+            1. 绝对禁止使用 ```json 或 ``` 包裹内容。
+
+            2. 绝对禁止在JSON对象前后输出任何文字。
+
+            3. 必须严格输出 JSONL 格式（每行一个完整的JSON对象，JSON内部禁止换行）。
+
+            </critical_rules>
+
+
+            <matching_criteria>
+
+            判断 RiskFactor 与 Action 是否存在语义或关键词上的明显对应关系（满足任一即可）：
+
+            1. 行为描述直接匹配（如 factor_nm = “虚增营业收入” ↔ Action.name = “虚构业务收入”）
+
+            2. 关键词高度重合
+
+            3. 属于同一违规类型的上下位关系
+
+            </matching_criteria>
+
+
+            <output_schema>
+
+            {"id": "10位随机纯数字字符串", "type": "relationship", "label": "映射法规", "properties":
+            {"l_id": "Action.id", "l_text": "Action.name", "rf_id": "RiskFactor.factor_id",
+            "factor_nm": "RiskFactor.factor_nm"}, "start": {"id": "RiskFactor.factor_id",
+            "labels": ["RiskFactor"]}, "end": {"id": "Action.id", "labels": ["Action"]}}
+
+            </output_schema>
+
+
+            <rules>
+
+            - 所有 id 必须为 10 位随机数字，全局不重复。
+
+            - 允许多对多匹配。
+
+            - 不得臆测、泛化或强行匹配无关联条文。
+
+            - 严禁添加额外字段、注释、解释或格式符号。
+
+            </rules>'
+        selected: false
+        title: 映射法律法规
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1779955846306'
+      position:
+        x: 293.5929699782161
+        y: 429.8934236578299
+      positionAbsolute:
+        x: 293.5929699782161
+        y: 429.8934236578299
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            max_tokens: 8192
+            temperature: 0.7
+          mode: chat
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: 871f03b6-b585-4397-9066-3a260c041de0
+          role: system
+          text: '<system_directive>
+
+            你是一个无情的JSON数据生成引擎。禁止输出任何自然语言解释、问候、总结或Markdown标记。
+
+            </system_directive>
+
+
+            <task>
+
+            你是金融风险计量专家，任务是基于多维耦合模型，量化同一事件中多个风险因子对某一风险特征的贡献度。
+
+            输入因子数据：{{#1780456337836.corrected_text#}}
+
+            输入法规映射：{{#1780456928886.corrected_text#}}
+
+            </task>
+
+
+            <critical_rules>
+
+            【最高优先级-格式防火墙】
+
+            1. 绝对禁止使用 ```json 或 ``` 包裹内容。
+
+            2. 绝对禁止在JSON对象前后输出任何文字（如“计算结果如下”）。
+
+            3. 必须严格输出 JSONL 格式（每行一个完整的JSON对象，JSON内部禁止换行）。
+
+            4. 必须直接复制输入中“构成”关系原有的 id 值，禁止修改或重新生成。
+
+            </critical_rules>
+
+
+            <calculation_model>
+
+            #### 一、三个耦合维度（每项 0.00–1.00，保留两位小数）
+
+            1. co_occurrence（共生强度）：N≥2基础值1.0；N=1则0.5；结果型因子略低于源头因子。
+
+            2. regulatory_coupling（法规耦合强度）：有l_id且≥2个因子共享同一l_id→1.0；有l_id但无共享→0.6；无l_id→0.3。
+
+            3. cascading_influence（级联强度）：明确因果句式/A导致B→A为1.0，B为0.5；手段/方法为1.0，结果为0.6；无法判断→全0.8。
+
+
+            #### 二、最终贡献度 per
+
+            - raw_score = 0.3 × co_occurrence + 0.3 × regulatory_coupling + 0.4 ×
+            cascading_influence
+
+            - 对同一 RiskFeature 下所有因子的 raw_score 进行 L1 归一化，使 ∑per = 1.00。
+
+            - per 保留两位小数，四舍五入后若总和 ≠ 1.00，微调最大值项以修正。
+
+            </calculation_model>
+
+
+            <output_schema>
+
+            {"id": "直接复制输入中该关系原有的id", "type": "relationship", "label": "构成", "properties":
+            {"e_id": "事件ID", "e_text": "≤50字", "rf_id": "原始rf_id", "factor_nm": "名称",
+            "rft_id": "原始rft_id", "feature_type": "名称", "co_occurrence": "0.xx", "regulatory_coupling":
+            "0.xx", "cascading_influence": "0.xx", "per": "0.xx"}, "start": {"id":
+            "rf_id", "labels": ["RiskFactor"]}, "end": {"id": "rft_id", "labels":
+            ["RiskFeature"]}}
+
+            </output_schema>
+
+
+            <rules>
+
+            - e_text 必须 ≤50 字。
+
+            - 所有数值保留两位小数。
+
+            - 同一 RiskFeature 下所有 per 之和必须严格等于 1.00。
+
+            - 不得虚构未出现的字段或关系。
+
+            </rules>'
+        selected: false
+        title: 因子耦合强度建模
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1779955962471'
+      position:
+        x: 909.0780036537556
+        y: 429.8934236578299
+      positionAbsolute:
+        x: 909.0780036537556
+        y: 429.8934236578299
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\nimport random\n\ndef main(raw_input: str) -> dict:\n \
+          \   \"\"\"\n    对特征因子提取节点的输出进行ID修正：\n    1. New_RF_xxx → 真正的随机数（带防假数字过滤）\n\
+          \    2. New_RFT_xxx → 与对应 New_RF 相同的数字（仅改前缀）\n    3. RFT_非标准格式 → 也统一修正\n\
+          \    4. 关系节点的 id → 真随机数（带防假数字过滤）\n    5. 保持所有关联关系一致\n    \"\"\"\n    if\
+          \ not raw_input or raw_input.strip() == 'SKIP_NORMAL':\n        return {'corrected_text':\
+          \ ''}\n\n    if not raw_input or not raw_input.strip():\n        return\
+          \ {\n            'corrected_text': ''\n        }\n    \n    llm_raw_output\
+          \ = raw_input.strip()\n    lines = [line.strip() for line in llm_raw_output.split('\\\
+          n') if line.strip()]\n    if not lines:\n        return {\n            'corrected_text':\
+          \ ''\n        }\n    \n    # ------------------- 收集所有对象 -------------------\n\
+          \    nodes = []           # 所有节点对象\n    relationships = []     # 所有关系对象\n\
+          \    original_lines = []   # 保留原始顺序和类型标记\n    \n    for line in lines:\n\
+          \        try:\n            obj = json.loads(line)\n            original_lines.append(obj)\n\
+          \            if obj.get('type') == 'node':\n                nodes.append(obj)\n\
+          \            elif obj.get('type') == 'relationship':\n                relationships.append(obj)\n\
+          \        except json.JSONDecodeError:\n            original_lines.append(line)\n\
+          \    \n    # ------------------- 真随机ID生成器 -------------------\n    id_mapping\
+          \ = {}       # 旧ID → 新ID\n    used_ids = set()      # 防止重复\n    \n    def\
+          \ gen_true_random_id(prefix: str, digits: int) -> str:\n        \"\"\"生成带防假数字过滤的真随机ID\"\
+          \"\"\n        attempts = 0\n        while attempts < 1000:\n           \
+          \ num = random.randint(10**(digits-1), 10**digits - 1)\n            s =\
+          \ str(num)\n            # 严格过滤假数字模式\n            if (len(set(s)) <= 2 or\n\
+          \                s in [\"123456789\", \"987654321\", \"5201314\", \"888888888\"\
+          , \"000000000\"] or\n                \"1234\" in s or \"4321\" in s or \"\
+          520\" in s or \"1314\" in s):\n                attempts += 1\n         \
+          \       continue\n            candidate = f\"{prefix}_{num}\"\n        \
+          \    if candidate not in used_ids:\n                used_ids.add(candidate)\n\
+          \                return candidate\n        # 兜底\n        candidate = f\"\
+          {prefix}_{random.randint(10**(digits-1), 10**digits-1)}\"\n        used_ids.add(candidate)\n\
+          \        return candidate\n    \n    # ------------------- 2.1 处理 RiskFactor\
+          \ 节点（New_RF_ 开头的）-------------------\n    rf_id_mapping = {}    # 旧RF_ID\
+          \ → 新RF_ID（用于后续关联RFT）\n    \n    for node in nodes:\n        labels = node.get('labels',\
+          \ [])\n        old_id = node.get('id', '')\n        \n        if 'RiskFactor'\
+          \ in labels and old_id.startswith('New_RF_'):\n            new_id = gen_true_random_id(\"\
+          New_RF\", 10)\n            id_mapping[old_id] = new_id\n            rf_id_mapping[old_id]\
+          \ = new_id\n    \n    # ------------------- 2.2 处理 RiskFeature 节点 -------------------\n\
+          \    for node in nodes:\n        labels = node.get('labels', [])\n     \
+          \   old_id = node.get('id', '')\n        \n        if 'RiskFeature' not\
+          \ in labels:\n            continue\n            \n        # 情况A：New_RFT_\
+          \ 开头 → 需要找到对应的RF，使用相同数字\n        if old_id.startswith('New_RFT_'):\n   \
+          \         old_digit = old_id.replace('New_RFT_', '')\n            corresponding_rf\
+          \ = None\n            for old_rf, new_rf in rf_id_mapping.items():\n   \
+          \             if old_rf.endswith(old_digit):\n                    corresponding_rf\
+          \ = new_rf\n                    break\n            \n            if corresponding_rf:\n\
+          \                new_digit = corresponding_rf.replace('New_RF_', '')\n \
+          \               new_id = f\"New_RFT_{new_digit}\"\n            else:\n \
+          \               new_id = gen_true_random_id(\"New_RFT\", 10)\n         \
+          \   id_mapping[old_id] = new_id\n            \n        # 情况B：RFT_ 开头但不是标准格式\n\
+          \        elif old_id.startswith('RFT_'):\n            parts = old_id.replace('RFT_',\
+          \ '').split('_')\n            is_standard = all(p.isdigit() for p in parts\
+          \ if p)\n            \n            if not is_standard:\n               \
+          \ corresponding_rf_id = None\n                for rel in relationships:\n\
+          \                    if rel.get('label') == '构成':\n                    \
+          \    end_node = rel.get('end', {})\n                        if end_node.get('id')\
+          \ == old_id:\n                            start_node = rel.get('start',\
+          \ {})\n                            corresponding_rf_id = start_node.get('id')\n\
+          \                            break\n                \n                if\
+          \ corresponding_rf_id and corresponding_rf_id in rf_id_mapping:\n      \
+          \              new_digit = rf_id_mapping[corresponding_rf_id].replace('New_RF_',\
+          \ '')\n                    new_id = f\"New_RFT_{new_digit}\"\n         \
+          \       else:\n                    new_id = gen_true_random_id(\"New_RFT\"\
+          , 10)\n                id_mapping[old_id] = new_id\n            # 标准格式（RFT_001_001_001）保持不变\n\
+          \    \n    # ------------------- 2.3 处理关系节点的 ID -------------------\n  \
+          \  for rel in relationships:\n        old_id = rel.get('id', '')\n     \
+          \   label = rel.get('label', '')\n        \n        if label in ['触发', '构成']:\n\
+          \            if label == '构成':\n                start_id = rel.get('start',\
+          \ {}).get('id', '')\n                end_id = rel.get('end', {}).get('id',\
+          \ '')\n                new_start = id_mapping.get(start_id, start_id)\n\
+          \                new_end = id_mapping.get(end_id, end_id)\n            \
+          \    new_id = f'{new_start}_{new_end}'\n                id_mapping[old_id]\
+          \ = new_id\n            else:\n                # \"触发\"关系：10位真随机数字\n   \
+          \             new_id = gen_true_random_id(\"r\", 10)\n                id_mapping[old_id]\
+          \ = new_id\n    \n    # ------------------- 3. 应用映射，更新所有对象 -------------------\n\
+          \    def update_id_in_obj(obj, old_id, new_id):\n        if obj.get('id')\
+          \ == old_id:\n            obj['id'] = new_id\n        \n        props =\
+          \ obj.get('properties', {})\n        for key in ['rf_id', 'rft_id', 'e_id']:\n\
+          \            if props.get(key) == old_id:\n                props[key] =\
+          \ new_id\n        \n        for endpoint in ['start', 'end']:\n        \
+          \    if endpoint in obj:\n                if obj[endpoint].get('id') ==\
+          \ old_id:\n                    obj[endpoint]['id'] = new_id\n    \n    for\
+          \ old_id, new_id in id_mapping.items():\n        for node in nodes:\n  \
+          \          update_id_in_obj(node, old_id, new_id)\n        for rel in relationships:\n\
+          \            update_id_in_obj(rel, old_id, new_id)\n    \n    # -------------------\
+          \ 4. 按原始顺序重新组装输出 -------------------\n    result_lines = []\n    node_idx\
+          \ = 0\n    rel_idx = 0\n    \n    for item in original_lines:\n        if\
+          \ isinstance(item, dict):\n            if item.get('type') == 'node' and\
+          \ node_idx < len(nodes):\n                result_lines.append(json.dumps(nodes[node_idx],\
+          \ ensure_ascii=False))\n                node_idx += 1\n            elif\
+          \ item.get('type') == 'relationship' and rel_idx < len(relationships):\n\
+          \                result_lines.append(json.dumps(relationships[rel_idx],\
+          \ ensure_ascii=False))\n                rel_idx += 1\n            else:\n\
+          \                result_lines.append(json.dumps(item, ensure_ascii=False))\n\
+          \        else:\n            result_lines.append(str(item))\n    \n    corrected_text\
+          \ = '\\n'.join(result_lines)\n    \n    return {\n        'corrected_text':\
+          \ corrected_text\n    }"
+        code_language: python3
+        outputs:
+          corrected_text:
+            children: null
+            type: string
+        selected: false
+        title: 赋值id生成三元组
+        type: code
+        variables:
+        - value_selector:
+          - '1779952232024'
+          - text
+          value_type: string
+          variable: raw_input
+      height: 51
+      id: '1780456337836'
+      position:
+        x: 1223.8694699006064
+        y: 167.61396531379927
+      positionAbsolute:
+        x: 1223.8694699006064
+        y: 167.61396531379927
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\nimport random\n\ndef main(raw_input: str) -> dict:\n \
+          \   \"\"\"\n    对\"映射法律法规\"节点的输出进行ID修正 + JSON压缩：\n    - \"映射法规\"关系的 id →\
+          \ 真随机数（带防假数字过滤）\n    - 保持其他所有字段不变\n    - 最终输出严格单行 JSONL（无缩进、无换行）\n    \"\
+          \"\"\n    if not raw_input or raw_input.strip() == 'SKIP_NO_MATCH':\n  \
+          \      return {'corrected_text': ''}\n    \n    if not raw_input or not\
+          \ raw_input.strip():\n        return {\n            'corrected_text': ''\n\
+          \        }\n    \n    llm_raw_output = raw_input.strip()\n    lines = [line.strip()\
+          \ for line in llm_raw_output.split('\\n') if line.strip()]\n    if not lines:\n\
+          \        return {\n            'corrected_text': ''\n        }\n    \n \
+          \   # ------------------- 真随机ID生成器 -------------------\n    used_ids = set()\n\
+          \    \n    def gen_true_random_id(prefix: str, digits: int) -> str:\n  \
+          \      \"\"\"生成带防假数字过滤的真随机ID\"\"\"\n        attempts = 0\n        while\
+          \ attempts < 1000:\n            num = random.randint(10**(digits-1), 10**digits\
+          \ - 1)\n            s = str(num)\n            # 严格过滤假数字模式\n            if\
+          \ (len(set(s)) <= 2 or\n                s in [\"123456789\", \"987654321\"\
+          , \"5201314\", \"888888888\", \"000000000\"] or\n                \"1234\"\
+          \ in s or \"4321\" in s or \"520\" in s or \"1314\" in s):\n           \
+          \     attempts += 1\n                continue\n            candidate = f\"\
+          {prefix}_{num}\"\n            if candidate not in used_ids:\n          \
+          \      used_ids.add(candidate)\n                return candidate\n     \
+          \   # 兜底\n        candidate = f\"{prefix}_{random.randint(10**(digits-1),\
+          \ 10**digits-1)}\"\n        used_ids.add(candidate)\n        return candidate\n\
+          \    \n    # ------------------- 处理每一行 + 压缩为单行 -------------------\n   \
+          \ result_lines = []\n    \n    for line in lines:\n        try:\n      \
+          \      obj = json.loads(line)\n        except json.JSONDecodeError:\n  \
+          \          result_lines.append(line)\n            continue\n        \n \
+          \       # 只处理\"映射法规\"关系，重新赋值其 id\n        if obj.get('type') == 'relationship'\
+          \ and obj.get('label') == '映射法规':\n            obj['id'] = gen_true_random_id(\"\
+          r\", 10)\n        \n        # 压缩为单行 JSON\n        compact = json.dumps(obj,\
+          \ separators=(',', ':'), ensure_ascii=False)\n        result_lines.append(compact)\n\
+          \    \n    corrected_text = '\\n'.join(result_lines)\n    \n    return {\n\
+          \        'corrected_text': corrected_text\n    }"
+        code_language: python3
+        outputs:
+          corrected_text:
+            children: null
+            type: string
+        selected: false
+        title: 映射关系提取
+        type: code
+        variables:
+        - value_selector:
+          - '1779955846306'
+          - text
+          value_type: string
+          variable: raw_input
+      height: 51
+      id: '1780456928886'
+      position:
+        x: 591.0560564876378
+        y: 429.8934236578299
+      positionAbsolute:
+        x: 591.0560564876378
+        y: 429.8934236578299
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: not empty
+            id: d8693475-be7e-46c0-b482-b036a9cb1509
+            value: ''
+            varType: string
+            variable_selector:
+            - '1780456337836'
+            - corrected_text
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 条件分支
+        type: if-else
+      height: 139
+      id: '1782969435248'
+      position:
+        x: 1504.1036104114203
+        y: 258.7335658983396
+      positionAbsolute:
+        x: 1504.1036104114203
+        y: 258.7335658983396
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1780456337836'
+          - corrected_text
+          value_type: string
+          variable: corrected_text
+        selected: false
+        title: 无映射输出
+        type: end
+      height: 88
+      id: '1782969642264'
+      position:
+        x: 1796.9823309462422
+        y: 353.1004103334593
+      positionAbsolute:
+        x: 1796.9823309462422
+        y: 353.1004103334593
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 240.94476655322399
+      y: 181.41732695958166
+      zoom: 0.28717458874925883
+  rag_pipeline_variables: []
