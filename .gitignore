@@ -80,3 +80,11 @@ docs/media/
 .agents/
 .learnings/
 MEMORY.md
+
+# package manager cache
+.pnpm-store/
+frontend/.npm-cache/
+
+# local run artifacts
+frontend_run/
+backend/kg_outputs/

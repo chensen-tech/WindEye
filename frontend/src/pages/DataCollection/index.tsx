@@ -21,6 +21,8 @@ import TemplatePanel from './components/TemplatePanel';
 import CrawlProgress from './components/CrawlProgress';
 import CrawlResult from './components/CrawlResult';
 import TaskHistory from './components/TaskHistory';
+import CrawledFileList from './components/CrawledFileList';
+import JsonArtifactList from './components/JsonArtifactList';
 
 const DataCollectionPage: React.FC = () => {
   const mode = useCrawlStore((s) => s.mode);
@@ -66,9 +68,13 @@ const DataCollectionPage: React.FC = () => {
   return (
     <PageContainer
       header={{
-        title: '数据采集',
+        title: (
+          <Space>
+            <CloudDownloadOutlined />
+            <span>数据采集</span>
+          </Space>
+        ),
         subTitle: '多智能体协同爬取系统 — 快速 / 智能 / 模板 三种模式',
-        icon: <CloudDownloadOutlined />,
       }}
     >
       <Row gutter={16}>
@@ -130,12 +136,23 @@ const DataCollectionPage: React.FC = () => {
               <CrawlResult />
             </Card>
           )}
+
+          <div style={{ marginBottom: 16 }}>
+            <CrawledFileList />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <JsonArtifactList />
+          </div>
         </Col>
 
         <Col xs={24} lg={8}>
           <Card title="采集模板" size="small" style={{ marginBottom: 16 }}>
             <TemplatePanel />
           </Card>
+          <div style={{ marginBottom: 16 }}>
+            <JsonArtifactList compact />
+          </div>
           <Card title="历史任务" size="small">
             <TaskHistory />
           </Card>

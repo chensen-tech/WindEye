@@ -240,7 +240,7 @@ const NODE_TYPE_COLORS: Record<string, string> = {
 };
 
 // ─── Component ───────────────────────────────────────────────────────
-const KnowledgeBuild: React.FC = () => {
+const PolicyRegulationPage: React.FC = () => {
   const { message: msg } = App.useApp();
 
   // Build state
@@ -2268,7 +2268,6 @@ const KnowledgeBuild: React.FC = () => {
   // ─── Main render ───────────────────────────────────────────────────
   return (
     <PageContainer>
-      {renderStepper()}
       {renderRegulationHub()}
 
       <Row gutter={16} style={{ height: 'calc(100vh - 240px)' }}>
@@ -2331,4 +2330,4 @@ const KnowledgeBuild: React.FC = () => {
   );
 };
 
-export default KnowledgeBuild;
+export default PolicyRegulationPage;

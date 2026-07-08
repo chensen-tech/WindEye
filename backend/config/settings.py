@@ -1,7 +1,10 @@
 """Centralized environment configuration for BiDA-KG backend."""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(BACKEND_DIR / ".env")
 load_dotenv()
 
 
@@ -31,6 +34,9 @@ class Settings:
 
     # ── [A] Data Collection ──────────────────────────────────────
     KG_DATA_DIR: str = os.getenv("KG_DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "..", "data"))
+
+    # ── [A] 企查查 API ───────────────────────────────────────────
+    QCC_API_KEY: str = os.getenv("QCC_API_KEY", "")
 
     # ── [A] NER ──────────────────────────────────────────────────
     NER_MODEL: str = os.getenv("NER_MODEL", "spacy")

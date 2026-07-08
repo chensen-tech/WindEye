@@ -199,7 +199,7 @@ interface JsonArtifact {
 const STAGES: StageDef[] = [
   { key: 'data_import', title: '第一步：爬虫抽取 / 数据导入', icon: <CloudUploadOutlined />, description: '采集、上传与文件解析' },
   { key: 'event_extraction', title: '第二步-1：风险事件 Dify', icon: <ThunderboltOutlined />, description: '将第一步得到的文件送入风险事件 Dify 工作流' },
-  { key: 'feature_extraction', title: '第二步：Dify 生成 JSON / 手动入库', icon: <ExclamationCircleOutlined />, description: '风险事件 Dify、特征层 Dify、JSON 导入 Neo4j 分步执行' },
+  { key: 'feature_extraction', title: '第二步：特征提取', icon: <ExclamationCircleOutlined />, description: '风险事件 Dify → 特征层 Dify → JSON 导入 Neo4j' },
 ];
 
 const MAIN_STAGE_KEYS: StageName[] = ['data_import', 'feature_extraction'];
@@ -240,7 +240,7 @@ const NODE_TYPE_COLORS: Record<string, string> = {
 };
 
 // ─── Component ───────────────────────────────────────────────────────
-const KnowledgeBuild: React.FC = () => {
+const RiskEventPage: React.FC = () => {
   const { message: msg } = App.useApp();
 
   // Build state
@@ -1620,7 +1620,7 @@ const KnowledgeBuild: React.FC = () => {
 
       {/* Step 2 Card */}
       {(buildStatus === 'completed' || buildStatus === 'paused') && (
-        <Card size="small" title="第二步：生成 JSON 与手动入库" style={{ marginBottom: 12, background: '#f6ffed' }}>
+        <Card size="small" title="第二步：特征提取" style={{ marginBottom: 12, background: '#f6ffed' }}>
           <div style={{ fontSize: 13, color: '#389e0d', marginBottom: 8 }}>
             第一步已完成，源文件已就绪。先将上传文件送入风险事件 Dify，再将风险事件结果送入特征层 Dify，生成 JSON；Neo4j 入库单独执行。
           </div>
@@ -1913,7 +1913,7 @@ const KnowledgeBuild: React.FC = () => {
     return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 16, fontWeight: 600 }}>第二步：事件/特征 Dify 生成 JSON 与手动入库</span>
+        <span style={{ fontSize: 16, fontWeight: 600 }}>第二步：特征提取</span>
         <Space>
           <Button
             type="primary"
@@ -2269,7 +2269,6 @@ const KnowledgeBuild: React.FC = () => {
   return (
     <PageContainer>
       {renderStepper()}
-      {renderRegulationHub()}
 
       <Row gutter={16} style={{ height: 'calc(100vh - 240px)' }}>
         {/* Left Panel */}
@@ -2290,7 +2289,7 @@ const KnowledgeBuild: React.FC = () => {
               ) : (
                 <Space>
                   {getStageDef(activeStage)?.icon}
-                  <span>{getStageTitle(activeStage)} - {getStageDef(activeStage)?.description}</span>
+                  <span style={{ fontSize: 16, fontWeight: 600 }}>{getStageTitle(activeStage)}</span>
                   {running && <LoadingOutlined spin />}
                 </Space>
               )
@@ -2331,4 +2330,4 @@ const KnowledgeBuild: React.FC = () => {
   );
 };
 
-export default KnowledgeBuild;
+export default RiskEventPage;

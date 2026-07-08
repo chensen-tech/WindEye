@@ -76,7 +76,7 @@ const ComplexInputPanel: React.FC = () => {
             column={2}
           >
             <Descriptions.Item label="数据类型">
-              <Tag>{parsedIntent.data_type === 'announcement' ? '公司公告' : parsedIntent.data_type === 'news' ? '舆情新闻' : '法律法规'}</Tag>
+              <Tag>{parsedIntent.data_type === 'risk_event' ? '风险事件' : '风险舆情'}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="置信度">
               {((parsedIntent.confidence || 0) * 100).toFixed(0)}%

@@ -9,14 +9,16 @@
  *
  * @doc https://umijs.org/docs/guides/proxy
  */
+const apiTarget = process.env.WINDEYE_API_TARGET || 'http://127.0.0.1:8002';
+
 export default {
   dev: {
     '/api/': {
-      target: 'http://localhost:8000',
+      target: apiTarget,
       changeOrigin: true,
     },
     '/health': {
-      target: 'http://localhost:8000',
+      target: apiTarget,
       changeOrigin: true,
     },
   },

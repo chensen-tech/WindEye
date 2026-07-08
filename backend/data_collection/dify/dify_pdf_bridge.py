@@ -206,7 +206,7 @@ def process_text_with_dify(text: str, source_name: str = "pipeline") -> list[dic
 
     for i, chunk in enumerate(chunks):
         logger.info(f"Processing chunk {i + 1}/{len(chunks)} for '{source_name}'")
-        chunk_results = client.run_workflow_sync(chunk, f"{source_name}_chunk{i}")
+        chunk_results = client.run_workflow_for_stage(chunk, "regulation_linking", f"{source_name}_chunk{i}")
         if chunk_results:
             all_results.extend(chunk_results)
 

@@ -6,6 +6,8 @@ export default {
   'menu.knowledge-graph-feature': '特征层',
   'menu.knowledge-graph-regulation': '法规层',
   'menu.knowledge-build': '图谱构建',
+  'menu.knowledge-build-risk-event': '风险事件',
+  'menu.knowledge-build-policy-regulation': '政策法规',
   'menu.knowledge-qa': '协同治理',
   'menu.community-discovery': '群体发现',
   'menu.system': '系统管理',

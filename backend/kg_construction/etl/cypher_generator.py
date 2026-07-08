@@ -94,6 +94,12 @@ DIFY_RELATION_MAP: dict[str, str] = {
     "受限于": "SUBJECT_TO",
     "监管": "REGULATES",
     "依照": "IN_ACCORDANCE_WITH",
+    "参与": "PARTICIPATE_IN",
+    "任职": "HOLDS_POSITION",
+    "发生于": "OCCURRED_AT",
+    "触发": "TRIGGERS",
+    "构成": "CONSTITUTES",
+    "映射法规": "MAPS_TO_REGULATION",
 }
 
 # ── Safe property name ────────────────────────────────────────────────
@@ -106,6 +112,71 @@ def _safe_prop_name(name: str) -> str:
 def _escape_cypher_string(value: str) -> str:
     """Escape a string value for safe Cypher embedding."""
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _safe_label_name(name: str) -> str:
+    """Sanitize a label while keeping common KG labels readable."""
+    cleaned = re.sub(r"[^0-9A-Za-z_\u4e00-\u9fff]", "_", str(name or "Entity")).strip("_")
+    if not cleaned:
+        return "Entity"
+    if cleaned[0].isdigit():
+        cleaned = f"N_{cleaned}"
+    return cleaned
+
+
+def _safe_rel_type(name: str) -> str:
+    """Convert a Dify relation label into a Neo4j relationship type."""
+    mapped = DIFY_RELATION_MAP.get(str(name or ""), str(name or "RELATED_TO"))
+    cleaned = re.sub(r"[^0-9A-Za-z_]", "_", mapped.upper()).strip("_")
+    if not cleaned:
+        return "RELATED_TO"
+    if cleaned[0].isdigit():
+        cleaned = f"R_{cleaned}"
+    return cleaned
+
+
+def _cypher_literal(value: Any) -> str:
+    """Serialize a Python value into a simple Cypher literal."""
+    if value is None:
+        return '""'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, dict)):
+        value = json.dumps(value, ensure_ascii=False)
+    return f'"{_escape_cypher_string(str(value))}"'
+
+
+def _first_scalar(props: dict[str, Any], keys: list[str]) -> str:
+    for key in keys:
+        value = props.get(key)
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            return str(value)
+    return ""
+
+
+def _node_name_from_props(props: dict[str, Any], fallback_id: str = "") -> str:
+    name = _first_scalar(props, [
+        "name", "title", "text", "label",
+        "COMPANY_NM", "PERSON_NM", "REGULATOR_NM",
+        "EVENT_NM", "TIME_NM", "factor_nm", "feature_type",
+        "law_name", "article", "content",
+    ])
+    if name:
+        return name
+    for key, value in props.items():
+        if key.endswith("_NM") and isinstance(value, (str, int, float)) and str(value).strip():
+            return str(value)
+    return fallback_id
+
+
+def _node_label(item_or_info: dict[str, Any], default: str = "Entity") -> str:
+    labels = item_or_info.get("labels") or []
+    if isinstance(labels, str):
+        labels = [labels]
+    label = labels[0] if labels else default
+    return _safe_label_name(DIFY_ENTITY_TO_LABEL.get(label, label))
 
 
 # ── Individual statement generators ───────────────────────────────────
@@ -286,52 +357,51 @@ def generate_cypher_from_dify_jsonl(
         if item.get("type") != "node":
             continue
 
-        labels = item.get("labels", [])
-        props = item.get("properties", {})
-        dify_label = labels[0] if labels else "Unknown"
-        neo4j_label = DIFY_ENTITY_TO_LABEL.get(dify_label, dify_label)
-        name = props.get("name", "") or props.get("title", "")
+        props = item.get("properties", {}) or {}
+        item_id = str(item.get("id", "") or "")
+        neo4j_label = _node_label(item, "Entity")
+        raw_label = (item.get("labels") or [neo4j_label])[0] if isinstance(item.get("labels") or [], list) else item.get("labels")
+        name = _node_name_from_props(props, item_id)
 
         if not name:
             continue
 
-        node_layer = DIFY_ENTITY_TO_LAYER.get(dify_label, layer)
+        node_layer = DIFY_ENTITY_TO_LAYER.get(str(raw_label), layer)
         safe_name = _escape_cypher_string(name)
+        safe_id = _escape_cypher_string(item_id or name)
         safe_source = _escape_cypher_string(str(source_file))
 
-        # Build additional properties (excluding 'name' which is the merge key)
+        # Build additional properties.
         extra_props = []
         for key, value in props.items():
-            if key == "name" or value is None or value == "":
+            if value is None or value == "":
                 continue
             pname = _safe_prop_name(key)
-            if isinstance(value, str):
-                extra_props.append(f'  n.{pname} = "{_escape_cypher_string(value)}"')
-            elif isinstance(value, (int, float)):
-                extra_props.append(f"  n.{pname} = {value}")
+            extra_props.append(f"  n.{pname} = {_cypher_literal(value)}")
 
         props_block = ",\n".join(extra_props) if extra_props else ""
         if props_block:
             props_block = ",\n" + props_block
 
         stmt = (
-            f"MERGE (n:{neo4j_label} {{name: \"{safe_name}\"}})\n"
+            f"MERGE (n:{neo4j_label} {{kg_id: \"{safe_id}\"}})\n"
             f"ON CREATE SET\n"
+            f"  n.name = \"{safe_name}\",\n"
             f"  n.source = \"{safe_source}\",\n"
             f"  n.extraction_method = \"dify\",\n"
             f"  n.layer = \"{node_layer}\",\n"
             f"  n.created_at = datetime(){props_block}\n"
             f"ON MATCH SET\n"
             f"  n.last_seen = datetime(),\n"
-            f"  n.extraction_method = \"dify\"\n"
+            f"  n.name = coalesce(n.name, \"{safe_name}\"),\n"
+            f"  n.extraction_method = \"dify\",\n"
             f"  n.layer = coalesce(n.layer, \"{node_layer}\");\n"
         )
         statements.append(stmt)
 
         # Store for relationship resolution
-        item_id = item.get("id", "")
         if item_id:
-            node_ids[item_id] = {"label": neo4j_label, "name": name}
+            node_ids[item_id] = {"label": neo4j_label, "name": name, "kg_id": item_id}
 
     # Second pass: generate relationship statements
     for item in results:
@@ -339,45 +409,51 @@ def generate_cypher_from_dify_jsonl(
             continue
 
         rel_label = item.get("label", "")
-        neo4j_rel_type = DIFY_RELATION_MAP.get(rel_label, rel_label.upper().replace(" ", "_"))
+        neo4j_rel_type = _safe_rel_type(rel_label)
 
         start_info = item.get("start", {})
         end_info = item.get("end", {})
 
         # Resolve start/end nodes by ID, then by label+name
-        start_id = start_info.get("id", "")
-        end_id = end_info.get("id", "")
+        start_id = str(start_info.get("id", "") or item.get("source", "") or item.get("source_id", ""))
+        end_id = str(end_info.get("id", "") or item.get("target", "") or item.get("target_id", ""))
 
         if start_id in node_ids and end_id in node_ids:
             src_label = node_ids[start_id]["label"]
             src_name = _escape_cypher_string(node_ids[start_id]["name"])
+            src_kg_id = _escape_cypher_string(node_ids[start_id]["kg_id"])
             tgt_label = node_ids[end_id]["label"]
             tgt_name = _escape_cypher_string(node_ids[end_id]["name"])
+            tgt_kg_id = _escape_cypher_string(node_ids[end_id]["kg_id"])
         else:
             # Fall back to inline label/name from the relationship
-            src_labels = start_info.get("labels", [])
-            src_label = DIFY_ENTITY_TO_LABEL.get(src_labels[0], "Entity") if src_labels else "Entity"
-            src_name = _escape_cypher_string(
-                start_info.get("properties", {}).get("name", "")
-                or start_info.get("name", "")
-            )
-            tgt_labels = end_info.get("labels", [])
-            tgt_label = DIFY_ENTITY_TO_LABEL.get(tgt_labels[0], "Entity") if tgt_labels else "Entity"
-            tgt_name = _escape_cypher_string(
-                end_info.get("properties", {}).get("name", "")
-                or end_info.get("name", "")
-            )
+            src_label = _node_label(start_info, "Entity")
+            src_props = start_info.get("properties", {}) or {}
+            src_name = _escape_cypher_string(_node_name_from_props(src_props, start_id))
+            src_kg_id = _escape_cypher_string(start_id or src_name)
+            tgt_label = _node_label(end_info, "Entity")
+            tgt_props = end_info.get("properties", {}) or {}
+            tgt_name = _escape_cypher_string(_node_name_from_props(tgt_props, end_id))
+            tgt_kg_id = _escape_cypher_string(end_id or tgt_name)
 
-        if not src_name or not tgt_name:
+        if not src_kg_id or not tgt_kg_id:
             continue
 
         safe_source = _escape_cypher_string(str(source_file))
+        rel_props = []
+        for key, value in (item.get("properties") or {}).items():
+            if value is None or value == "":
+                continue
+            rel_props.append(f"  r.{_safe_prop_name(key)} = {_cypher_literal(value)}")
+        rel_props_block = ",\n" + ",\n".join(rel_props) if rel_props else ""
         stmt = (
-            f"MATCH (a:{src_label} {{name: \"{src_name}\"}})\n"
-            f"MATCH (b:{tgt_label} {{name: \"{tgt_name}\"}})\n"
+            f"MERGE (a:{src_label} {{kg_id: \"{src_kg_id}\"}})\n"
+            f"ON CREATE SET a.name = \"{src_name}\", a.source = \"{safe_source}\", a.extraction_method = \"dify\", a.created_at = datetime()\n"
+            f"MERGE (b:{tgt_label} {{kg_id: \"{tgt_kg_id}\"}})\n"
+            f"ON CREATE SET b.name = \"{tgt_name}\", b.source = \"{safe_source}\", b.extraction_method = \"dify\", b.created_at = datetime()\n"
             f"MERGE (a)-[r:{neo4j_rel_type}]->(b)\n"
             f"ON CREATE SET r.created_at = datetime(), r.source = \"{safe_source}\", "
-            f"r.extraction_method = \"dify\"\n"
+            f"r.extraction_method = \"dify\"{rel_props_block}\n"
             f"ON MATCH SET r.last_seen = datetime();\n"
         )
         statements.append(stmt)

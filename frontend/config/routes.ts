@@ -35,7 +35,24 @@ export default [
     path: '/knowledge-build',
     name: 'knowledge-build',
     icon: 'tool',
-    component: './KnowledgeBuild',
+    routes: [
+      {
+        path: '/knowledge-build',
+        redirect: '/knowledge-build/risk-event',
+      },
+      {
+        path: '/knowledge-build/risk-event',
+        name: '风险事件',
+        icon: 'thunderbolt',
+        component: './KnowledgeBuild/RiskEventPage',
+      },
+      {
+        path: '/knowledge-build/policy-regulation',
+        name: '政策法规',
+        icon: 'safetyCertificate',
+        component: './KnowledgeBuild/PolicyRegulationPage',
+      },
+    ],
   },
   // ═══════════════════════════════════════════════════════════════════
   // Module B: 知识图谱展示 (Developer B)

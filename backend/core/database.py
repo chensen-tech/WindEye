@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import os
 import logging
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from neo4j.exceptions import (
     Neo4jError,
@@ -25,6 +27,9 @@ from tenacity import (
 )
 
 logger = logging.getLogger(__name__)
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+load_dotenv()
 
 
 class Neo4jClient:

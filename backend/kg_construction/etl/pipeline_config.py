@@ -29,6 +29,15 @@ SCRAPER_DATA_DIR = os.path.join(
 # ── Data source definitions ───────────────────────────────────────────
 
 DATA_SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
+    "uploaded_docs": {
+        "name": "上传文件",
+        "category": "用户上传",
+        "data_subdir": "uploaded_docs",
+        "input_glob": "*.*",
+        "layer": "Event",
+        "entity_types": ["COMPANY", "PERSON", "EVENT", "SECURITY"],
+        "relation_types": ["MENTIONED_IN", "INVOLVED_IN", "REPORTS"],
+    },
     "risk_event_sse": {
         "name": "上交所风险事件",
         "category": "风险事件",

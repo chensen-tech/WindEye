@@ -166,7 +166,31 @@ class PipelineRunner:
             records = []
             processed_files = []
 
-            if "pdf" in glob_pattern.lower():
+            def parse_general_file(fpath: str) -> str:
+                suffix = os.path.splitext(fpath)[1].lower()
+                if suffix == ".pdf":
+                    from data_collection.file_import.pdf_parser import parse_pdf_hybrid
+
+                    return parse_pdf_hybrid(fpath) or ""
+                if suffix in {".txt", ".md"}:
+                    with open(fpath, "r", encoding="utf-8", errors="ignore") as fh:
+                        return fh.read()
+                if suffix == ".docx":
+                    from docx import Document
+
+                    doc = Document(fpath)
+                    return "\n".join(p.text for p in doc.paragraphs if p.text)
+                return ""
+
+            if glob_pattern == "*.*":
+                for f in sorted(os.listdir(source_dir)):
+                    fpath = os.path.join(source_dir, f)
+                    if os.path.isfile(fpath):
+                        text = parse_general_file(fpath)
+                        if text:
+                            records.append({"file": f, "text": text})
+                        processed_files.append(fpath)
+            elif "pdf" in glob_pattern.lower():
                 from data_collection.file_import.pdf_parser import parse_pdf_hybrid
                 for f in sorted(os.listdir(source_dir)):
                     fpath = os.path.join(source_dir, f)

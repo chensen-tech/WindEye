@@ -1,7 +1,7 @@
 # WindEye 一键启动脚本
 # Usage: .\start.ps1
 # 启动顺序：数据库服务（如已安装为 Windows 服务） -> 后端 -> 前端
-# 仅占用 8000 (backend) 和 8001 (frontend) 端口，不影响其他项目进程
+# 仅占用 8002 (backend) 和 8001 (frontend) 端口，不影响其他项目进程
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -97,7 +97,7 @@ Start-DependencyService -Label "Redis" -NamePatterns @("redis*") -Port 6379 -Req
 
 # ── 2. 仅释放目标端口，不影响其他进程 ──
 Write-Host "[2/5] Checking ports..." -ForegroundColor Yellow
-Free-Port -Port 8000 -Label "Backend"
+Free-Port -Port 8002 -Label "Backend"
 Free-Port -Port 8001 -Label "Frontend"
 Write-Host "  Dependency status:" -ForegroundColor Gray
 Show-Dependency -Port 7687 -Label "Neo4j" -Required $true
@@ -105,23 +105,27 @@ Show-Dependency -Port 3306 -Label "MySQL" -Required $false
 Show-Dependency -Port 6379 -Label "Redis" -Required $false
 
 # ── 3. 启动后端 ──
-Write-Host "[3/5] Starting backend (port 8000)..." -ForegroundColor Green
+Write-Host "[3/5] Starting backend (port 8002)..." -ForegroundColor Green
 $backendDir = Join-Path $root "backend"
 $venvPython = Join-Path $backendDir "venv\Scripts\python.exe"
 $pythonCommand = if (Test-Path $venvPython) { "'$venvPython'" } else { "python" }
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendDir'; Write-Host 'Backend: http://localhost:8000' -ForegroundColor Green; & $pythonCommand -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendDir'; Write-Host 'Backend: http://localhost:8002' -ForegroundColor Green; & $pythonCommand -m uvicorn main:app --host 0.0.0.0 --port 8002 --reload"
 
 # ── 4. 启动前端 (使用 PORT 环境变量指定端口，避免默认 8000 冲突) ──
 Write-Host "[4/5] Starting frontend (port 8001)..." -ForegroundColor Green
 $frontendDir = Join-Path $root "frontend"
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$frontendDir'; `$env:PORT = '8001'; Write-Host 'Frontend: http://localhost:8001' -ForegroundColor Green; npm run dev"
+$frontendRunDir = Join-Path $root "frontend_run"
+if ((Test-Path (Join-Path $frontendRunDir "node_modules")) -and -not (Test-Path (Join-Path $frontendDir "node_modules"))) {
+    $frontendDir = $frontendRunDir
+}
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$frontendDir'; `$env:PORT = '8001'; `$env:WINDEYE_API_TARGET = 'http://127.0.0.1:8002'; Write-Host 'Frontend: http://localhost:8001' -ForegroundColor Green; npm run dev"
 
 Write-Host "[5/5] Waiting for services..." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "=== Done ===" -ForegroundColor Cyan
 Write-Host "Frontend: http://localhost:8001" -ForegroundColor Cyan
-Write-Host "Backend:  http://localhost:8000" -ForegroundColor Cyan
-Write-Host "API Docs: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host "Backend:  http://localhost:8002" -ForegroundColor Cyan
+Write-Host "API Docs: http://localhost:8002/docs" -ForegroundColor Cyan
 Write-Host ""
 
 # 可选: 检查前端 proxy 配置

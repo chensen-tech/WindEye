@@ -24,9 +24,15 @@ import json
 import logging
 import os
 import time
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +69,7 @@ class DifyClient:
         self.api_key = api_key or os.getenv("DIFY_API_KEY", "")
         self.base_url = (base_url or os.getenv("DIFY_BASE_URL", DEFAULT_BASE_URL)).rstrip("/")
         self.timeout = timeout
+        self.last_error = ""
 
     # ── Stage-aware API ─────────────────────────────────────────────────
 
@@ -82,16 +89,18 @@ class DifyClient:
         """
         env_var = _STAGE_API_KEY_ENV_MAP.get(stage)
         if not env_var:
-            logger.warning(f"Unknown stage '{stage}' — no API key mapping.")
+            self.last_error = f"Unknown stage '{stage}' — no API key mapping."
+            logger.warning(self.last_error)
             return []
 
         # Per-stage API key, fall back to default DIFY_API_KEY
         stage_api_key = os.getenv(env_var, "") or self.api_key
         if not stage_api_key:
-            logger.warning(f"No API key for stage '{stage}' — set {env_var} or DIFY_API_KEY.")
+            self.last_error = f"No API key for stage '{stage}' — set {env_var} or DIFY_API_KEY."
+            logger.warning(self.last_error)
             return []
 
-        return self._run_workflow(text, stage_api_key, source_name)
+        return self._run_workflow(text, stage_api_key, source_name, stage)
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -105,7 +114,7 @@ class DifyClient:
     # ── Internal ───────────────────────────────────────────────────────
 
     def _run_workflow(
-        self, text: str, api_key: str, source_name: str = "pipeline"
+        self, text: str, api_key: str, source_name: str = "pipeline", stage: str | None = None
     ) -> list[dict[str, Any]]:
         """Run a Dify workflow synchronously with retry logic.
 
@@ -119,11 +128,13 @@ class DifyClient:
             relationship {"type":"relationship", ...}.
         """
         if not api_key:
-            logger.warning("No Dify API key provided — skipping extraction.")
+            self.last_error = "No Dify API key provided — skipping extraction."
+            logger.warning(self.last_error)
             return []
 
         if not text or not text.strip():
-            logger.warning(f"Empty text for source '{source_name}' — skipping.")
+            self.last_error = f"Empty text for source '{source_name}' — skipping."
+            logger.warning(self.last_error)
             return []
 
         url = f"{self.base_url}/v1/workflows/run"
@@ -131,19 +142,54 @@ class DifyClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        uploaded_file_id = None
+        file_input = None
+        if stage != "feature_extraction":
+            uploaded_file_id = self._upload_text_as_file(text, api_key, source_name)
+            file_input = {
+                "type": "document",
+                "transfer_method": "local_file",
+                "upload_file_id": uploaded_file_id,
+            } if uploaded_file_id else None
+        workflow_inputs = {"risk_event": text[:15000]} if stage == "feature_extraction" else {
+            "text": text[:15000],
+            **({"file_list": file_input} if file_input else {}),
+        }
         payload = {
-            "inputs": {"text": text[:15000]},  # Truncate to reasonable chunk size
-            "response_mode": "blocking",
+            "inputs": workflow_inputs,
+            "response_mode": "streaming",
             "user": f"windeye-{source_name[:30]}",
         }
 
         last_error: str | None = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                resp = httpx.post(url, headers=headers, json=payload, timeout=self.timeout)
-                if resp.status_code == 200:
-                    return self._parse_response(resp.json())
-                last_error = f"HTTP {resp.status_code}: {resp.text[:300]}"
+                results = self._run_workflow_stream(url, headers, payload)
+                if results:
+                    self.last_error = ""
+                    return results
+                last_error = "Workflow returned no parseable node/relationship output"
+                logger.warning(
+                    f"Dify API attempt {attempt}/{MAX_RETRIES} for '{source_name}': {last_error}"
+                )
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                response_text = e.response.text[:300]
+                last_error = f"HTTP {status_code}: {response_text}"
+                if status_code == 400 and file_input:
+                    logger.warning(
+                        "Dify workflow rejected file_list for '%s'; retrying this attempt with text-only input.",
+                        source_name,
+                    )
+                    payload["inputs"].pop("file_list", None)
+                    try:
+                        results = self._run_workflow_stream(url, headers, payload)
+                        if results:
+                            self.last_error = ""
+                            return results
+                        last_error = "Text-only workflow returned no parseable node/relationship output"
+                    except Exception as fallback_error:
+                        last_error = str(fallback_error)
                 logger.warning(
                     f"Dify API attempt {attempt}/{MAX_RETRIES} for '{source_name}': {last_error}"
                 )
@@ -162,8 +208,82 @@ class DifyClient:
                 delay = RETRY_BACKOFF_BASE ** attempt
                 time.sleep(delay)
 
-        logger.error(f"Dify extraction failed for '{source_name}': {last_error}")
+        self.last_error = last_error or "Dify extraction returned no result"
+        logger.error(f"Dify extraction failed for '{source_name}': {self.last_error}")
         return []
+
+    def _upload_text_as_file(self, text: str, api_key: str, source_name: str) -> str | None:
+        """Upload text to Dify's file API and return the upload_file_id."""
+        upload_url = f"{self.base_url}/v1/files/upload"
+        safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in source_name) or "input"
+        if not safe_name.lower().endswith(".txt"):
+            safe_name = f"{safe_name}.txt"
+
+        temp_path = Path(tempfile.gettempdir()) / f"windeye_dify_{os.getpid()}_{safe_name}"
+        temp_path.write_text(text, encoding="utf-8")
+        try:
+            with temp_path.open("rb") as fh:
+                resp = httpx.post(
+                    upload_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    files={"file": (safe_name, fh, "text/plain")},
+                    data={"user": f"windeye-{source_name[:30]}"},
+                    timeout=self.timeout,
+                )
+            if resp.status_code not in {200, 201}:
+                logger.warning(
+                    "Dify file upload failed for '%s': HTTP %s %s",
+                    source_name,
+                    resp.status_code,
+                    resp.text[:300],
+                )
+                return None
+            upload_id = resp.json().get("id")
+            if not upload_id:
+                logger.warning("Dify file upload response has no id for '%s'.", source_name)
+                return None
+            return upload_id
+        except Exception as e:
+            logger.warning("Dify file upload failed for '%s': %s", source_name, e)
+            return None
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _run_workflow_stream(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Run workflow in streaming mode and parse the final outputs."""
+        final_response: dict[str, Any] | None = None
+        with httpx.stream("POST", url, headers=headers, json=payload, timeout=self.timeout) as resp:
+            if resp.status_code != 200:
+                resp.read()
+                raise httpx.HTTPStatusError(
+                    f"HTTP {resp.status_code}: {resp.text[:300]}",
+                    request=resp.request,
+                    response=resp,
+                )
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                payload_text = line[5:].strip()
+                if not payload_text:
+                    continue
+                try:
+                    event = json.loads(payload_text)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("event") == "workflow_finished":
+                    final_response = event
+
+        if not final_response:
+            return []
+        return self._parse_response(final_response)
 
     # ── Response parsing ─────────────────────────────────────────────────
 
@@ -173,26 +293,76 @@ class DifyClient:
         The workflow's End node outputs 'output_triples' — a JSONL string where
         each line is a JSON object with type "node" or "relationship".
         """
-        data = resp.get("data", {})
-        outputs = data.get("outputs", {})
-        triples_str = outputs.get("output_triples", outputs.get("final_triples", ""))
-
-        if not triples_str:
-            logger.warning("Dify response contained no output_triples.")
+        data = resp.get("data") or {}
+        if data.get("status") == "failed":
+            self.last_error = f"Dify workflow failed: {data.get('error') or data}"
+            logger.warning(self.last_error)
             return []
-
+        outputs = data.get("outputs") or {}
         results: list[dict[str, Any]] = []
-        for line in triples_str.strip().split("\n"):
-            line = line.strip()
-            if not line:
-                continue
+
+        def append_item(item: Any) -> None:
+            if isinstance(item, dict) and item.get("type") in {"node", "relationship"}:
+                results.append(item)
+
+        def parse_text(text: str) -> None:
+            text = text.strip()
+            if not text:
+                return
             try:
-                obj = json.loads(line)
-                if isinstance(obj, dict) and "type" in obj:
-                    results.append(obj)
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        append_item(item)
+                    return
+                if isinstance(parsed, dict):
+                    append_item(parsed)
+                    for key in ("items", "results", "triples", "output_triples", "final_triples"):
+                        nested = parsed.get(key)
+                        if isinstance(nested, list):
+                            for item in nested:
+                                append_item(item)
+                        elif isinstance(nested, str):
+                            parse_text(nested)
+                    return
             except json.JSONDecodeError:
-                logger.debug(f"Skipping non-JSON line in Dify output: {line[:100]}")
-                continue
+                pass
+
+            for line in text.split("\n"):
+                line = line.strip().strip(",")
+                if not line:
+                    continue
+                if "{" in line and not line.startswith("{"):
+                    line = line[line.find("{"):]
+                try:
+                    obj = json.loads(line)
+                    append_item(obj)
+                except json.JSONDecodeError:
+                    logger.debug(f"Skipping non-JSON line in Dify output: {line[:100]}")
+
+        preferred = outputs.get("output_triples", outputs.get("final_triples", ""))
+        if isinstance(preferred, str):
+            parse_text(preferred)
+        elif isinstance(preferred, list):
+            for item in preferred:
+                append_item(item)
+
+        if not results:
+            for key, value in outputs.items():
+                if key in {"output_triples", "final_triples"}:
+                    continue
+                if isinstance(value, str):
+                    parse_text(value)
+                elif isinstance(value, list):
+                    for item in value:
+                        append_item(item)
+                elif isinstance(value, dict):
+                    append_item(value)
+
+        if not results:
+            self.last_error = f"Dify response contained no parseable triples. Output keys: {list(outputs.keys())}"
+            logger.warning(self.last_error)
+            return []
 
         node_count = sum(1 for r in results if r.get("type") == "node")
         edge_count = sum(1 for r in results if r.get("type") == "relationship")
