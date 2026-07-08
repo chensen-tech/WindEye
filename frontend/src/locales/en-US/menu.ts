@@ -6,6 +6,8 @@ export default {
   'menu.knowledge-graph-feature': 'Feature Layer',
   'menu.knowledge-graph-regulation': 'Regulation Layer',
   'menu.knowledge-build': 'Graph Build',
+  'menu.knowledge-build-risk-event': 'Risk Events',
+  'menu.knowledge-build-policy-regulation': 'Policy & Regulations',
   'menu.knowledge-qa': 'Risk Q&A',
   'menu.community-discovery': 'Community Discovery',
   'menu.system': 'System Management',
