@@ -1,6 +1,6 @@
 """Shared browser and download utilities for scrapers.
 
-Consolidates common/browser.py and common/download.py into a single module.
+Supports Edge (default, built into Windows Server) and Chrome.
 """
 
 from __future__ import annotations
@@ -24,28 +24,41 @@ from selenium.webdriver.support import expected_conditions as EC
 
 logger = logging.getLogger(__name__)
 
+BROWSER_ORDER = os.getenv("SCRAPER_BROWSER", "edge,chrome").split(",")
 
-# ── Browser drivers ──────────────────────────────────────────────────────
 
-def _chrome_driver_path() -> Optional[str]:
-    """Find chromedriver: explicit env var > standard locations > PATH > None."""
+# ── Driver locating ────────────────────────────────────────────────────
+
+def _find_edge_driver() -> Optional[str]:
+    """Find msedgedriver: env var > project dir > PATH."""
+    explicit = os.getenv("EDGEDRIVER_PATH", "")
+    if explicit and os.path.isfile(explicit):
+        return explicit
+    # Project-bundled
+    project = os.path.join(
+        os.path.dirname(__file__),
+        "edgedriver-win64", "msedgedriver.exe",
+    )
+    if os.path.isfile(project):
+        return project
+    return shutil.which("msedgedriver")
+
+
+def _find_chrome_driver() -> Optional[str]:
+    """Find chromedriver: env var > project dir > PATH."""
     explicit = os.getenv("CHROMEDRIVER_PATH", "")
     if explicit and os.path.isfile(explicit):
         return explicit
-    # Common chromedriver locations (including manually downloaded ones)
-    candidates = [
-        r"D:\chromedriver-win64-148\chromedriver.exe",
-        r"D:\chromedriver-win64\chromedriver.exe",
-        r"C:\Program Files\Google\Chrome\Application\chromedriver.exe",
-    ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return p
-    found = shutil.which("chromedriver")
-    if found:
-        return found
-    return None
+    project = os.path.join(
+        os.path.dirname(__file__),
+        "chromedriver-win64", "chromedriver-win64", "chromedriver.exe",
+    )
+    if os.path.isfile(project):
+        return project
+    return shutil.which("chromedriver")
 
+
+# ── Anti-detection ────────────────────────────────────────────────────
 
 def _add_anti_detection(driver: webdriver.Chrome | webdriver.Edge) -> None:
     """Hide webdriver-specific JS properties to work around bot detection."""
@@ -60,17 +73,92 @@ def _add_anti_detection(driver: webdriver.Chrome | webdriver.Edge) -> None:
         pass
 
 
-def create_chrome_driver(
+def _build_download_prefs(download_dir: str) -> dict:
+    """Return Edge-compatible download prefs dict."""
+    os.makedirs(download_dir, exist_ok=True)
+    return {
+        "download.default_directory": os.path.abspath(download_dir),
+        "download.prompt_for_download": False,
+        "plugins.always_open_pdf_externally": True,
+        "profile.default_content_setting_values.automatic_downloads": 1,
+    }
+
+
+# ── Unified driver creation (Edge-first) ──────────────────────────────
+
+def create_driver(
     download_dir: Optional[str] = None,
     headless: bool = False,
-    page_load_strategy: str = "normal",
+    page_load_timeout: float = 60.0,
+) -> webdriver.Chrome | webdriver.Edge:
+    """Auto-select browser: Edge > Chrome.  Use SCRAPER_BROWSER env to override.
+
+    Edge is built into Windows Server — no extra install needed.
+    """
+    errors = []
+
+    for browser in BROWSER_ORDER:
+        browser = browser.strip().lower()
+        try:
+            if browser == "edge":
+                return _create_edge_driver(download_dir, headless, page_load_timeout)
+            elif browser == "chrome":
+                return _create_chrome_driver(download_dir, headless, page_load_timeout)
+        except Exception as e:
+            errors.append(f"{browser}: {e}")
+            logger.warning("Driver creation failed for %s: %s", browser, e)
+
+    raise RuntimeError(
+        f"无法创建任何浏览器 WebDriver。已尝试: {', '.join(b.strip() for b in BROWSER_ORDER)}\n"
+        f"错误详情: {'; '.join(errors)}\n"
+        f"Edge 为 Windows Server 默认浏览器，无需额外安装。"
+    )
+
+
+def _create_edge_driver(
+    download_dir: Optional[str] = None,
+    headless: bool = False,
+    page_load_timeout: float = 60.0,
+) -> webdriver.Edge:
+    """Create Edge WebDriver with consistent options and anti-detection."""
+    options = webdriver.EdgeOptions()
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--ignore-ssl-errors")
+
+    if headless:
+        options.add_argument("--headless")
+
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+
+    if download_dir:
+        options.add_experimental_option("prefs", _build_download_prefs(download_dir))
+
+    driver_path = _find_edge_driver()
+    if driver_path:
+        logger.info("Using msedgedriver at: %s", driver_path)
+        driver = webdriver.Edge(service=EdgeService(driver_path), options=options)
+    else:
+        logger.info("msedgedriver not found, trying selenium auto-discovery...")
+        driver = webdriver.Edge(options=options)
+
+    _add_anti_detection(driver)
+    driver.set_page_load_timeout(page_load_timeout)
+    _patch_navigator_webdriver(driver)
+    return driver
+
+
+def _create_chrome_driver(
+    download_dir: Optional[str] = None,
+    headless: bool = False,
     page_load_timeout: float = 60.0,
 ) -> webdriver.Chrome:
-    """Create a Chrome WebDriver with consistent options and anti-detection.
-
-    Sets page_load_timeout to prevent driver.get() from hanging indefinitely
-    on slow/unreachable sites (default 60s, configurable via env var).
-    """
+    """Create Chrome WebDriver with consistent options and anti-detection."""
     options = webdriver.ChromeOptions()
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
@@ -85,93 +173,34 @@ def create_chrome_driver(
 
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-    options.page_load_strategy = page_load_strategy
 
     if download_dir:
-        os.makedirs(download_dir, exist_ok=True)
-        prefs = {
-            "download.default_directory": os.path.abspath(download_dir),
-            "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": True,
-            "profile.default_content_setting_values.automatic_downloads": 1,
-        }
-        options.add_experimental_option("prefs", prefs)
+        options.add_experimental_option("prefs", _build_download_prefs(download_dir))
 
-    driver_path = _chrome_driver_path()
+    driver_path = _find_chrome_driver()
     if driver_path:
         logger.info("Using chromedriver at: %s", driver_path)
         driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
     else:
-        logger.info("chromedriver not found on PATH or standard locations, trying auto-discovery...")
-        try:
-            driver = webdriver.Chrome(options=options)
-        except Exception as e:
-            raise RuntimeError(
-                "Chrome WebDriver 未找到，无法启动真实爬虫。\n"
-                "请下载 Chrome 浏览器和对应版本的 chromedriver:\n"
-                "  1. 下载 Chrome: https://www.google.com/chrome/\n"
-                "  2. 下载 chromedriver: https://chromedriver.chromium.org/\n"
-                "  3. 将 chromedriver.exe 放到以下位置之一:\n"
-                "     - D:\\chromedriver-win64\\chromedriver.exe\n"
-                "     - C:\\Program Files\\Google\\Chrome\\Application\\chromedriver.exe\n"
-                "     - 添加到系统 PATH\n"
-                f"原始错误: {e}"
-            ) from e
-
-    timeout = float(os.getenv("CHROME_PAGE_LOAD_TIMEOUT", str(page_load_timeout)))
-    driver.set_page_load_timeout(timeout)
-    driver.set_script_timeout(timeout)
-    logger.info("ChromeDriver page_load_timeout=%.0fs, script_timeout=%.0fs", timeout, timeout)
+        logger.info("chromedriver not found, trying selenium auto-discovery...")
+        driver = webdriver.Chrome(options=options)
 
     _add_anti_detection(driver)
+    driver.set_page_load_timeout(page_load_timeout)
     return driver
 
 
-def create_edge_driver(
-    download_dir: Optional[str] = None,
-    headless: bool = False,
-    page_load_timeout: float = 60.0,
-) -> webdriver.Edge:
-    """Create an Edge WebDriver with consistent options and anti-detection."""
-    options = webdriver.EdgeOptions()
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument(
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
-    )
+def _patch_navigator_webdriver(driver) -> None:
+    """Patch navigator.webdriver to avoid detection (Edge-specific)."""
+    script = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+    try:
+        driver.execute_script(script)
+    except Exception:
+        pass
 
-    if headless:
-        options.add_argument("--headless")
 
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-
-    if download_dir:
-        os.makedirs(download_dir, exist_ok=True)
-        prefs = {
-            "download.default_directory": os.path.abspath(download_dir),
-            "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": True,
-            "profile.default_content_setting_values.automatic_downloads": 1,
-        }
-        options.add_experimental_option("prefs", prefs)
-
-    edge_driver_path = os.getenv("EDGEDRIVER_PATH", "")
-    if edge_driver_path and os.path.isfile(edge_driver_path):
-        driver = webdriver.Edge(service=EdgeService(edge_driver_path), options=options)
-    else:
-        driver = webdriver.Edge(options=options)
-
-    timeout = float(os.getenv("CHROME_PAGE_LOAD_TIMEOUT", str(page_load_timeout)))
-    driver.set_page_load_timeout(timeout)
-    driver.set_script_timeout(timeout)
-
-    _add_anti_detection(driver)
-    return driver
+# Backward-compatible alias — scrapers should migrate to create_driver()
+create_chrome_driver = _create_chrome_driver
 
 
 # ── Download helpers ──────────────────────────────────────────────────────

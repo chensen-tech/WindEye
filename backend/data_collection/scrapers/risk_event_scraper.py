@@ -12,7 +12,7 @@ import random
 import time
 
 from data_collection.scrapers.utils import (
-    create_chrome_driver,
+    create_driver,
     ensure_dir,
     find_with_fallback,
     log_element_failure,
@@ -50,7 +50,7 @@ def _scrape_sse(config: dict) -> dict:
         "风险警示": "31",
     }
 
-    driver = create_chrome_driver(download_dir=save_dir)
+    driver = create_driver(download_dir=save_dir)
     try:
         url = "https://www.sse.com.cn/disclosure/listedinfo/announcement/"
         logger.info(f"SSE: opening {url}")
@@ -190,7 +190,7 @@ def _scrape_szse(config: dict) -> dict:
             date_start, date_end, max_pages,
         )
 
-    driver = create_chrome_driver(download_dir=save_dir)
+    driver = create_driver(download_dir=save_dir)
     try:
         url = "https://www.szse.cn/disclosure/supervision/measure/pushish/index.html"
         logger.info(f"SZSE: opening {url}")
@@ -301,7 +301,7 @@ def _scrape_bse(config: dict) -> dict:
             date_start, date_end, max_pages,
         )
 
-    driver = create_chrome_driver(download_dir=save_dir)
+    driver = create_driver(download_dir=save_dir)
     try:
         BSE_URLS = [
             "https://www.bse.cn/disclosure/disciplinary_aciton.html",
